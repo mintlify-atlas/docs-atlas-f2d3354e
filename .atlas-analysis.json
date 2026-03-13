@@ -1,0 +1,101 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "CoW Fee Module",
+  "projectDescription": "A Safe module that automates fee token collection and swapping from CoW Protocol Settlement contracts across multiple chains.",
+  "theme": "aspen",
+  "primaryColor": "#7c7c7c",
+  "lightColor": "#0d0d0d",
+  "darkColor": "#dedede",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "overview",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/setup",
+              "deployment/deploy-module",
+              "deployment/enable-module",
+              "deployment/verify-contract",
+              "deployment/networks"
+            ]
+          },
+          {
+            "group": "Keeper Operations",
+            "pages": [
+              "keeper/overview",
+              "keeper/configuration",
+              "keeper/running-keeper",
+              "keeper/docker",
+              "keeper/token-strategies"
+            ]
+          },
+          {
+            "group": "Smart Contracts",
+            "pages": [
+              "contracts/cowfeemodule",
+              "contracts/interfaces",
+              "contracts/functions"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/module-operations",
+              "operations/troubleshooting",
+              "operations/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Smart Contract API",
+            "pages": [
+              "api/drip",
+              "api/approve",
+              "api/revoke",
+              "api/next-valid-to"
+            ]
+          },
+          {
+            "group": "TypeScript Utilities",
+            "pages": [
+              "api/typescript/config",
+              "api/typescript/drip-it-all",
+              "api/typescript/token-balances"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automated fee token collection from CoW Protocol Settlement contract",
+    "Safe module integration for secure transaction execution",
+    "Multi-chain deployment support (Ethereum, Gnosis, Arbitrum, Base, etc.)",
+    "Configurable token swap strategies using CoW Protocol orderbook",
+    "TypeScript keeper bot for automated operation",
+    "Native token wrapping and handling"
+  ],
+  "publicApiSurface": [
+    "drip(address[] calldata _approveTokens, SwapToken[] calldata _swapTokens)",
+    "approve(address[] calldata _tokens)",
+    "revoke(Revocation[] calldata _revocations)",
+    "nextValidTo() returns (uint32)",
+    "dripItAll(config, signer, provider)",
+    "getTokensToSwap(config, provider)",
+    "swapTokens(moduleContract, config, signer, toSwap)"
+  ]
+}

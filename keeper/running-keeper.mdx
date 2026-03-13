@@ -1,0 +1,406 @@
+---
+title: 'Running the Keeper'
+description: 'Step-by-step guide to running the CoW Fee Module keeper bot locally'
+---
+
+This guide walks you through setting up and running the keeper bot to automate fee collection for your deployed COWFeeModule.
+
+## Prerequisites
+
+<Check>
+Before running the keeper, ensure you have:
+
+- **Node.js** (LTS version) and **Yarn** installed
+- **Deployed COWFeeModule** contract on target network
+- **Keeper wallet** with private key (must match module's `keeper` address)
+- **RPC endpoint** for your target network
+- **Enabled module** on your target Safe
+</Check>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone <repository-url>
+    cd cow-fee
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    yarn install
+    ```
+    
+    This installs all required packages from `package.json:2-9`:
+    - `@cowprotocol/cow-sdk` - CoW Protocol SDK
+    - `ethers` v5 - Ethereum library
+    - `@commander-js/extra-typings` - CLI argument parsing
+    - `axios` - HTTP client for API calls
+  </Step>
+
+  <Step title="Configure environment">
+    Copy the example environment file:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Edit `.env` and set your keeper's private key:
+    
+    ```bash .env
+    PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+    ```
+    
+    <Warning>
+      **Security**: Never commit your `.env` file or expose your private key. The keeper will validate that this key matches the module's configured keeper address.
+    </Warning>
+  </Step>
+</Steps>
+
+## Basic Usage
+
+From `README.md:83-109`, the keeper is invoked using:
+
+```bash
+Usage: cow-fee [options]
+```
+
+### Minimal Command
+
+The minimum required arguments are `--network` and `--module`:
+
+```bash
+source .env
+
+yarn ts-node index.ts \
+  --network mainnet \
+  --module 0xYourModuleAddress
+```
+
+This will:
+1. Load your `PRIVATE_KEY` from the environment
+2. Connect to Ethereum mainnet using the default RPC
+3. Read configuration from the module contract
+4. Discover tokens using the explorer strategy
+5. Create and execute swap orders
+
+### Full Command with Options
+
+```bash
+source .env
+
+yarn ts-node index.ts \
+  --network mainnet \
+  --max-orders 250 \
+  --rpc-url $RPC_URL \
+  --buy-amount-slippage-bps 100 \
+  --module 0xYourModuleAddress \
+  --token-list-strategy chain \
+  --lookback-range 1000
+```
+
+<Note>
+See the [Configuration](/keeper/configuration) page for detailed explanation of each option.
+</Note>
+
+## Network Examples
+
+<Tabs>
+  <Tab title="Ethereum Mainnet">
+    ```bash
+    yarn ts-node index.ts \
+      --network mainnet \
+      --module 0xYourModuleAddress \
+      --rpc-url https://eth.llamarpc.com
+    ```
+    
+    Uses Ethplorer API for fast token discovery.
+  </Tab>
+
+  <Tab title="Gnosis Chain">
+    ```bash
+    yarn ts-node index.ts \
+      --network gnosis \
+      --module 0xYourModuleAddress \
+      --rpc-url https://1rpc.io/gnosis
+    ```
+    
+    Uses Blockscout API for token discovery.
+  </Tab>
+
+  <Tab title="Arbitrum One">
+    ```bash
+    yarn ts-node index.ts \
+      --network arbitrum \
+      --module 0xYourModuleAddress \
+      --token-list-strategy chain \
+      --lookback-range 5000
+    ```
+    
+    Uses on-chain `Trade` events (no explorer API available).
+  </Tab>
+
+  <Tab title="Base">
+    ```bash
+    yarn ts-node index.ts \
+      --network base \
+      --module 0xYourModuleAddress \
+      --rpc-url https://base.llamarpc.com \
+      --token-list-strategy chain
+    ```
+  </Tab>
+
+  <Tab title="Sepolia Testnet">
+    ```bash
+    yarn ts-node index.ts \
+      --network sepolia \
+      --module 0xYourModuleAddress \
+      --confirm-drip
+    ```
+    
+    The `--confirm-drip` flag adds interactive confirmation for testing.
+  </Tab>
+</Tabs>
+
+## Execution Flow
+
+When you run the keeper, it follows this workflow from `index.ts` and `ts/drip/dripItAll.ts`:
+
+<Steps>
+  <Step title="Configuration Loading">
+    ```
+    ✓ Reading configuration from CLI arguments
+    ✓ Connecting to RPC endpoint
+    ✓ Fetching module parameters from contract
+    ✓ Validating keeper wallet address
+    ```
+    
+    Output:
+    ```
+    Config options:
+     { network: 'mainnet', maxOrders: 250, ... }
+    Wallet address: 0xYourKeeperAddress
+    ```
+  </Step>
+
+  <Step title="Token Discovery">
+    ```
+    ✓ Checking ETH balance to wrap
+    ✓ Discovering tokens in Settlement contract
+    ✓ Fetching balances for all tokens
+    ✓ Checking allowances for Vault Relayer
+    ✓ Querying CoW Protocol for quotes
+    ✓ Filtering by minOut threshold
+    ```
+    
+    Output:
+    ```
+    ETH to wrap: 0.5
+    Total tokens pre-filter: 87
+    Total tokens after filtering by quotes api: 42
+    Total tokens after filtering by minOut: 38
+    Tokens to swap: [
+      { symbol: 'USDC', balance: '1234.56', buyAmount: '0.789', needsApproval: true },
+      { symbol: 'DAI', balance: '5678.90', buyAmount: '3.21', needsApproval: false },
+      ...
+    ]
+    ```
+  </Step>
+
+  <Step title="Order Creation">
+    ```
+    ✓ Generating appData for orders
+    ✓ Fetching nextValidTo from module
+    ✓ Posting presigned orders to OrderBook API
+    ```
+    
+    Output:
+    ```
+    Successfully posted orders:
+     ['0xabc123...', '0xdef456...', ...]
+    ```
+  </Step>
+
+  <Step title="Transaction Execution">
+    ```
+    ✓ Preparing drip transaction
+    ✓ Encoding function call with tokens to approve and swap
+    ✓ Estimating gas limit
+    ✓ Fetching gas prices (EIP-1559)
+    ✓ Sending transaction
+    ✓ Waiting for confirmation
+    ```
+    
+    Output:
+    ```
+    Drip transaction parameters: {
+      from: '0xYourKeeperAddress',
+      to: '0xModuleAddress',
+      maxFeePerGas: '30000000000',
+      maxPriorityFeePerGas: '1500000000',
+      value: '0',
+      nonce: 42
+    }
+    Estimated gas limit: 1234567
+    
+    Fee collection for chain mainnet initiated (38 orders).
+    Expecting proceeds of 123.45 WETH!
+    
+    Follow the progress at https://explorer.cow.fi/address/0xSettlementAddress
+    ```
+  </Step>
+</Steps>
+
+## Interactive Mode
+
+For testing or manual oversight, use the `--confirm-drip` flag:
+
+```bash
+yarn ts-node index.ts \
+  --network sepolia \
+  --module 0xYourModuleAddress \
+  --confirm-drip
+```
+
+The keeper will prompt before sending the transaction:
+
+```
+Drip transaction parameters: { ... }
+Estimated gas limit: 1234567
+
+Do you want to send this transaction? (yes/no): 
+```
+
+Type `yes` to proceed or `no` to cancel.
+
+## Gas Configuration
+
+### Auto Mode (Default)
+
+By default, the keeper fetches gas prices from the network using `getFeeData()` from `ts/drip/drip.ts:59`.
+
+### Manual Override
+
+For high-priority execution or specific gas requirements:
+
+```bash
+yarn ts-node index.ts \
+  --network mainnet \
+  --module 0xYourModuleAddress \
+  --max-fee-per-gas 50 \
+  --max-priority-fee-per-gas 2
+```
+
+<Note>
+Gas values are specified in **GWEI**. The keeper converts them to wei internally using `ethers.utils.parseUnits(x, 'gwei')`.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: Missing env var PRIVATE_KEY">
+    **Solution**: Ensure your `.env` file exists and contains `PRIVATE_KEY`:
+    
+    ```bash
+    source .env
+    echo $PRIVATE_KEY  # Should output your key
+    ```
+  </Accordion>
+
+  <Accordion title="Error: Keeper address mismatch">
+    ```
+    Error: The provided private key belongs to 0xABC..., 
+    which doesn't match the keeper (0xDEF...)
+    ```
+    
+    **Solution**: The wallet derived from `PRIVATE_KEY` must match the `keeper` address in your module contract. Verify the module's keeper:
+    
+    ```bash
+    cast call $MODULE_ADDRESS "keeper()" --rpc-url $RPC_URL
+    ```
+  </Accordion>
+
+  <Accordion title="Error: appData mismatch">
+    ```
+    Error: appData mismatch: 0xabc... != 0xdef...
+    ```
+    
+    **Solution**: The appData hash has changed. This is a safety check in `ts/drip/swapTokens.ts:20-22`. Ensure you're using the correct module deployment or update the module's appData.
+  </Accordion>
+
+  <Accordion title="No tokens to swap">
+    ```
+    Total tokens after filtering by minOut: 0
+    No tokens to swap, skipping approvals and drip
+    ```
+    
+    **Possible causes**:
+    - No fee tokens accumulated yet
+    - All tokens below `minOut` threshold
+    - No liquidity for tokens in CoW Protocol
+    
+    **Solution**: Wait for fees to accumulate or lower `minOut` in your module configuration.
+  </Accordion>
+
+  <Accordion title="Error estimating gas">
+    ```
+    Error estimating gas. Please review the transaction parameters
+    ```
+    
+    **Possible causes**:
+    - Module not enabled on Safe
+    - Keeper not authorized
+    - Network congestion
+    - Invalid token addresses
+    
+    **Solution**: Verify module is enabled and keeper is authorized. Check network status.
+  </Accordion>
+
+  <Accordion title="Failed posting orders">
+    ```
+    Failed posting orders:
+     ["Sell amount too low", "No liquidity for pair", ...]
+    ```
+    
+    **Behavior**: The keeper logs failures but continues with successfully posted orders. This is expected behavior from `ts/drip/swapTokens.ts:35-40`.
+    
+    **Solution**: Failed orders are excluded from the drip call automatically.
+  </Accordion>
+</AccordionGroup>
+
+## Production Deployment
+
+<Warning>
+For production use, consider:
+
+1. **Automation**: Use cron jobs or systemd timers to run the keeper periodically
+2. **Monitoring**: Log output to files and set up alerts for errors
+3. **Security**: Use hardware wallets or secure key management systems
+4. **Redundancy**: Run multiple keeper instances with different RPC providers
+5. **Gas Management**: Monitor gas prices and adjust `--max-fee-per-gas` dynamically
+</Warning>
+
+### Cron Example
+
+Run every hour:
+
+```cron
+0 * * * * cd /path/to/cow-fee && source .env && yarn ts-node index.ts --network mainnet --module 0x... >> keeper.log 2>&1
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Deployment" icon="docker" href="/keeper/docker">
+    Deploy the keeper using Docker for easier management
+  </Card>
+  
+  <Card title="Token Strategies" icon="filter" href="/keeper/token-strategies">
+    Optimize token discovery for your use case
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/keeper/configuration">
+    Fine-tune keeper parameters
+  </Card>
+</CardGroup>

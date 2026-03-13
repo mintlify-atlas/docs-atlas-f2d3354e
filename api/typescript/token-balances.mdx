@@ -1,0 +1,449 @@
+---
+title: "getTokenBalances"
+description: "Fetch token holdings for an address using explorer APIs or on-chain queries"
+---
+
+## Overview
+
+The `getTokenBalances` function retrieves token balance information for a given address using different strategies:
+- **Explorer strategy**: Uses blockchain explorer APIs (EthPlorer for Mainnet, Blockscout for Gnosis)
+- **Chain strategy**: Queries on-chain Trade events from the CoW Protocol settlement contract
+
+## Function Signature
+
+```typescript
+export const getTokenBalances = async (
+  address: string,
+  network: IConfig["network"],
+  strategy: "explorer" | "chain",
+  config: IConfig
+): Promise<ITokenInfo[]>
+```
+
+## Parameters
+
+<ParamField path="address" type="string" required>
+  The Ethereum address to query for token balances. Typically the GPv2Settlement contract address.
+  
+  ```typescript
+  const address = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"; // Gnosis settlement
+  ```
+</ParamField>
+
+<ParamField path="network" type="IConfig['network']" required>
+  Network identifier. Must be one of the supported networks: `"mainnet"`, `"gnosis"`, `"arbitrum"`, `"base"`, `"sepolia"`, `"avalanche"`, `"polygon"`, `"bnb"`, `"linea"`, `"plasma"`, or `"ink"`.
+</ParamField>
+
+<ParamField path="strategy" type="'explorer' | 'chain'" required>
+  The strategy to use for fetching token information:
+  
+  - `"explorer"`: Uses third-party explorer APIs (faster, but only supports mainnet and gnosis)
+  - `"chain"`: Queries on-chain events directly (slower, but works on all networks)
+</ParamField>
+
+<ParamField path="config" type="IConfig" required>
+  Configuration object required when using the `"chain"` strategy. Must include `rpcUrl`, `gpv2Settlement`, and `lookbackRange` fields.
+</ParamField>
+
+## Return Value
+
+<ResponseField name="Promise<ITokenInfo[]>" type="Promise<ITokenInfo[]>">
+  Returns a Promise that resolves to an array of token information objects.
+</ResponseField>
+
+### ITokenInfo Interface
+
+```typescript
+interface ITokenInfo {
+  address: string;
+  symbol: string;
+  decimals: number;
+  balance?: string;
+}
+```
+
+<ResponseField name="address" type="string">
+  The token contract address (checksummed format).
+</ResponseField>
+
+<ResponseField name="symbol" type="string">
+  The token symbol (e.g., "USDC", "GNO"). May be empty when using chain strategy.
+</ResponseField>
+
+<ResponseField name="decimals" type="number">
+  Number of decimal places for the token (typically 18 for most tokens, 6 for USDC).
+</ResponseField>
+
+<ResponseField name="balance" type="string" optional>
+  Raw balance string (not decimal-adjusted). Only populated when using explorer strategy. For chain strategy, this field is undefined.
+</ResponseField>
+
+## Strategies
+
+### Explorer Strategy
+
+Uses third-party APIs to fetch token balances quickly. Currently supports:
+
+#### Mainnet (EthPlorer)
+
+```typescript
+const getTokenInfosFromEthPlorer = async (
+  address: string
+): Promise<ITokenInfo[]> => {
+  const { data } = await axios.get<IEthplorerResponse>(
+    `https://api.ethplorer.io/getAddressInfo/${address}?apiKey=freekey`
+  );
+
+  return data.tokens.map((token) => ({
+    address: token.tokenInfo.address,
+    decimals: +token.tokenInfo.decimals,
+    symbol: token.tokenInfo.symbol,
+    balance: token.rawBalance,
+  }));
+};
+```
+
+<Note>
+  EthPlorer API uses a public "freekey" with rate limits. For production use, consider obtaining a dedicated API key.
+</Note>
+
+#### Gnosis (Blockscout)
+
+```typescript
+const getTokenInfosFromBlockscout = async (
+  address: string
+): Promise<ITokenInfo[]> => {
+  const { data } = await axios.get<IBlockscoutResponse[]>(
+    `https://gnosis.blockscout.com/api/v2/addresses/${address}/token-balances`
+  );
+
+  return data
+    .filter((token) => token.token.type === "ERC-20")
+    .map((token) => ({
+      address: token.token.address,
+      decimals: +token.token.decimals,
+      symbol: token.token.symbol,
+      balance: token.value,
+    }));
+};
+```
+
+Filters out non-ERC-20 tokens (such as ERC-721 NFTs) from the results.
+
+### Chain Strategy
+
+Queries the blockchain directly by analyzing Trade events from the settlement contract.
+
+```typescript
+const getTokenInfosFromChain = async (
+  config: IConfig
+): Promise<ITokenInfo[]> => {
+  const LOG_FILTER_RANGE = 1000;
+  const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+  const settlement = new ethers.Contract(
+    config.gpv2Settlement,
+    settlementAbi,
+    provider
+  );
+  const tradeFilter = settlement.filters.Trade();
+  const currentBlock = await provider.getBlockNumber();
+
+  const chunks = chunkRange(
+    currentBlock - config.lookbackRange,
+    currentBlock,
+    LOG_FILTER_RANGE
+  );
+  const logRanges = await Promise.all(
+    chunks.map(async ([start, end]) => {
+      return await settlement.queryFilter(tradeFilter, start, end);
+    })
+  );
+  const logs = logRanges.flat();
+
+  const allTokens = Array.from(
+    new Set(
+      logs.map((log) => [log.args!.sellToken, log.args!.buyToken]).flat()
+    ).values()
+  ).filter(
+    (x) =>
+      x.toLowerCase() !==
+      "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE".toLowerCase()
+  );
+
+  const allDecimals = await getDecimals(provider, allTokens);
+  const allTokenInfo: ITokenInfo[] = allTokens.map((token, idx) => {
+    const decimals = allDecimals[idx];
+    return {
+      address: token,
+      decimals,
+      symbol: "",
+    };
+  });
+  return allTokenInfo;
+};
+```
+
+#### How Chain Strategy Works:
+
+1. **Event Filtering**: Queries Trade events from the settlement contract within the lookback range
+2. **Chunking**: Splits the block range into chunks of 1000 blocks to avoid RPC response limits
+3. **Token Discovery**: Extracts unique token addresses from both `sellToken` and `buyToken` fields
+4. **Filtering**: Removes the native ETH placeholder address (`0xEeee...EEeE`)
+5. **Decimals Fetching**: Uses Multicall3 to batch-fetch decimals for all discovered tokens
+
+<Note>
+  Chain strategy does not populate the `symbol` or `balance` fields. It only discovers which tokens have been traded historically.
+</Note>
+
+## Helper Functions
+
+### getDecimals
+
+Batch-fetches token decimals using Multicall3:
+
+```typescript
+const getDecimals = async (
+  provider: ethers.providers.JsonRpcProvider,
+  tokens: string[]
+): Promise<number[]> => {
+  const Multicall3 = getMulticall3(provider);
+  const decimalsCalldata = new ethers.utils.Interface(
+    erc20Abi
+  ).encodeFunctionData("decimals");
+  const cds = tokens.map((token) => ({
+    target: token,
+    callData: decimalsCalldata,
+  }));
+  const decimalsRet = await Multicall3.tryAggregate(false, cds);
+  const decimals = decimalsRet.map((r: any, idx: number) => {
+    if (!r.success) return 0;
+
+    try {
+      return ABI_CODER.decode(["uint8"], r.returnData)[0];
+    } catch (err) {
+      console.log("errror decoding", r.returnData, tokens[idx]);
+    }
+  }) as number[];
+  return decimals;
+};
+```
+
+Returns `0` for tokens where the decimals call fails (e.g., non-standard tokens).
+
+### chunkRange
+
+Splits a block range into smaller chunks:
+
+```typescript
+const chunkRange = (
+  start: number,
+  end: number,
+  chunkSize: number
+): [number, number][] => {
+  const chunks: [number, number][] = [];
+  for (let i = start; i <= end; i += chunkSize) {
+    const chunk = Math.min(i + chunkSize - 1, end);
+    chunks.push([i, chunk]);
+  }
+  return chunks;
+};
+```
+
+Ensures the last chunk doesn't exceed the end block.
+
+## Usage Examples
+
+### Explorer Strategy (Mainnet)
+
+```typescript
+import { getTokenBalances } from "./drip/getTokenBalances";
+
+const tokens = await getTokenBalances(
+  "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  "mainnet",
+  "explorer",
+  config
+);
+
+console.log(tokens);
+// [
+//   {
+//     address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+//     symbol: "USDC",
+//     decimals: 6,
+//     balance: "125500000" // 125.5 USDC
+//   },
+//   ...
+// ]
+```
+
+### Explorer Strategy (Gnosis)
+
+```typescript
+const tokens = await getTokenBalances(
+  "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  "gnosis",
+  "explorer",
+  config
+);
+
+console.log(tokens);
+// [
+//   {
+//     address: "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83",
+//     symbol: "USDC",
+//     decimals: 6,
+//     balance: "125500000"
+//   },
+//   {
+//     address: "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
+//     symbol: "GNO",
+//     decimals: 18,
+//     balance: "750000000000000000" // 0.75 GNO
+//   }
+// ]
+```
+
+### Chain Strategy (Any Network)
+
+```typescript
+import { IConfig } from "./config";
+
+const config: IConfig = {
+  // ... other config fields
+  rpcUrl: "https://arb1.arbitrum.io/rpc",
+  gpv2Settlement: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  lookbackRange: 10000, // Last 10,000 blocks
+};
+
+const tokens = await getTokenBalances(
+  "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  "arbitrum",
+  "chain",
+  config
+);
+
+console.log(tokens);
+// [
+//   {
+//     address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+//     symbol: "",
+//     decimals: 6
+//     // no balance field
+//   },
+//   {
+//     address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+//     symbol: "",
+//     decimals: 18
+//   },
+//   ...
+// ]
+```
+
+## Strategy Selection Guide
+
+<table>
+  <thead>
+    <tr>
+      <th>Criteria</th>
+      <th>Explorer Strategy</th>
+      <th>Chain Strategy</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Speed</td>
+      <td>Fast (single API call)</td>
+      <td>Slower (multiple RPC calls)</td>
+    </tr>
+    <tr>
+      <td>Supported Networks</td>
+      <td>Mainnet, Gnosis only</td>
+      <td>All networks</td>
+    </tr>
+    <tr>
+      <td>Balance Info</td>
+      <td>Included</td>
+      <td>Not included</td>
+    </tr>
+    <tr>
+      <td>Symbol Info</td>
+      <td>Included</td>
+      <td>Not included</td>
+    </tr>
+    <tr>
+      <td>Dependencies</td>
+      <td>Third-party API</td>
+      <td>RPC node only</td>
+    </tr>
+    <tr>
+      <td>Rate Limits</td>
+      <td>Subject to API limits</td>
+      <td>Subject to RPC limits</td>
+    </tr>
+  </tbody>
+</table>
+
+<Note>
+  For Mainnet and Gnosis, use the **explorer** strategy for better performance. For other chains, use the **chain** strategy.
+</Note>
+
+## API Response Types
+
+### IEthplorerResponse
+
+```typescript
+interface IEthplorerResponse {
+  tokens: {
+    tokenInfo: {
+      address: string;
+      name: string;
+      decimals: string;
+      symbol: string;
+      price: { rate: number };
+    };
+    rawBalance: string;
+  }[];
+}
+```
+
+### IBlockscoutResponse
+
+```typescript
+interface IBlockscoutResponse {
+  token: {
+    address: string;
+    decimals: string;
+    exchange_rate: string;
+    symbol: string;
+    type: string; // "ERC-20", "ERC-721", etc.
+  };
+  value: string;
+}
+```
+
+## Error Handling
+
+The function may throw errors in the following cases:
+
+- Network request failures (axios errors)
+- RPC node errors (when using chain strategy)
+- Invalid contract addresses
+- Insufficient RPC node capabilities (e.g., doesn't support event filtering)
+
+```typescript
+try {
+  const tokens = await getTokenBalances(
+    address,
+    "gnosis",
+    "explorer",
+    config
+  );
+} catch (error) {
+  console.error("Failed to fetch token balances:", error);
+}
+```
+
+<Note>
+  When using the chain strategy with large lookback ranges, be mindful of RPC rate limits. Consider reducing `config.lookbackRange` if you encounter timeout errors.
+</Note>

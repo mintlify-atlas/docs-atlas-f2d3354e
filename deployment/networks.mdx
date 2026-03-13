@@ -1,0 +1,438 @@
+---
+title: 'Deployed Networks'
+description: 'CoW Fee Module deployments across supported networks'
+---
+
+## Overview
+
+The CoW Fee Module is deployed across 11 networks, supporting both mainnet and testnet environments. This page provides deployment addresses, transaction hashes, and network-specific information for each deployment.
+
+<Note>
+  All deployments use the same contract code but with network-specific configuration parameters.
+</Note>
+
+## Mainnet Deployments
+
+### Ethereum Mainnet
+
+<CodeGroup>
+```yaml Details
+Chain ID: 1
+Network: Ethereum Mainnet
+Module Address: 0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2
+Deployment Tx: 0x53af2b8111fa359558843a7afff5227a9104da4fec5f368d322e8649c91c070a
+Block Explorer: etherscan.io
+Wrapped Native: WETH (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2 "settlement()" \
+  --rpc-url https://eth.llamarpc.com
+```
+</CodeGroup>
+
+**Links:**
+- [View on Etherscan](https://etherscan.io/address/0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2)
+- [Deployment Transaction](https://etherscan.io/tx/0x53af2b8111fa359558843a7afff5227a9104da4fec5f368d322e8649c91c070a)
+
+---
+
+### Gnosis Chain
+
+<CodeGroup>
+```yaml Details
+Chain ID: 100
+Network: Gnosis Chain
+Module Address: 0x264843e85f8449ee3e9436253f3b8c0282dd4795
+Deployment Tx: 0xfc3f72d19b7eeb53dca8f4046246c46e12e5b12e965f708dd079fc1cfa20a562
+Block Explorer: gnosisscan.io
+Wrapped Native: WXDAI (0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0x264843e85f8449ee3e9436253f3b8c0282dd4795 "settlement()" \
+  --rpc-url https://1rpc.io/gnosis
+```
+</CodeGroup>
+
+**Links:**
+- [View on Gnosisscan](https://gnosisscan.io/address/0x264843e85f8449ee3e9436253f3b8c0282dd4795)
+- [Deployment Transaction](https://gnosisscan.io/tx/0xfc3f72d19b7eeb53dca8f4046246c46e12e5b12e965f708dd079fc1cfa20a562)
+
+---
+
+### Polygon
+
+<CodeGroup>
+```yaml Details
+Chain ID: 137
+Network: Polygon PoS
+Module Address: 0xaf717efcfec02a65101e3ffb3c07234b8705cafc
+Deployment Tx: 0xdda1c2a819a38ce5188c711c077802aef1cfb12de9f1cadede7b5edd6ef56b1b
+Block Explorer: polygonscan.com
+Wrapped Native: WMATIC (0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xaf717efcfec02a65101e3ffb3c07234b8705cafc "settlement()" \
+  --rpc-url https://polygon-rpc.com
+```
+</CodeGroup>
+
+**Links:**
+- [View on Polygonscan](https://polygonscan.com/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc)
+- [Deployment Transaction](https://polygonscan.com/tx/0xdda1c2a819a38ce5188c711c077802aef1cfb12de9f1cadede7b5edd6ef56b1b)
+
+---
+
+### Arbitrum One
+
+<CodeGroup>
+```yaml Details
+Chain ID: 42161
+Network: Arbitrum One
+Module Address: 0xaf717efcfec02a65101e3ffb3c07234b8705cafc
+Deployment Tx: 0xed7069a1f6b1a8256d1e3d90936fe004aa22c4c8080f4c5bd7044d356e8c55e7
+Block Explorer: arbiscan.io
+Wrapped Native: WETH (0x82aF49447D8a07e3bd95BD0d56f35241523fBab1)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xaf717efcfec02a65101e3ffb3c07234b8705cafc "settlement()" \
+  --rpc-url https://arb1.arbitrum.io/rpc
+```
+</CodeGroup>
+
+**Links:**
+- [View on Arbiscan](https://arbiscan.io/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc)
+- [Deployment Transaction](https://arbiscan.io/tx/0xed7069a1f6b1a8256d1e3d90936fe004aa22c4c8080f4c5bd7044d356e8c55e7)
+
+---
+
+### Avalanche C-Chain
+
+<CodeGroup>
+```yaml Details
+Chain ID: 43114
+Network: Avalanche C-Chain
+Module Address: 0xaf717efcfec02a65101e3ffb3c07234b8705cafc
+Deployment Tx: 0x97975c8b66239526263bc03eba17e524b837539e5c4910d8f2d5f2c0c2433251
+Block Explorer: snowtrace.io
+Wrapped Native: WAVAX (0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xaf717efcfec02a65101e3ffb3c07234b8705cafc "settlement()" \
+  --rpc-url https://api.avax.network/ext/bc/C/rpc
+```
+</CodeGroup>
+
+**Links:**
+- [View on Snowtrace](https://snowtrace.io/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc)
+- [Deployment Transaction](https://snowtrace.io/tx/0x97975c8b66239526263bc03eba17e524b837539e5c4910d8f2d5f2c0c2433251)
+
+---
+
+### BNB Smart Chain
+
+<CodeGroup>
+```yaml Details
+Chain ID: 56
+Network: BNB Smart Chain
+Module Address: 0xab8bc499b69c56a0c14778ee162bfe245eb26ed9
+Deployment Tx: 0x8a754808251ddae16ada08e71fe2fa36d06abcc1404d8aeb2f80a4413234c576
+Block Explorer: bscscan.com
+Wrapped Native: WBNB (0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xab8bc499b69c56a0c14778ee162bfe245eb26ed9 "settlement()" \
+  --rpc-url https://bsc-dataseed.binance.org
+```
+</CodeGroup>
+
+**Links:**
+- [View on BscScan](https://bscscan.com/address/0xab8bc499b69c56a0c14778ee162bfe245eb26ed9)
+- [Deployment Transaction](https://bscscan.com/tx/0x8a754808251ddae16ada08e71fe2fa36d06abcc1404d8aeb2f80a4413234c576)
+
+---
+
+### Linea
+
+<CodeGroup>
+```yaml Details
+Chain ID: 59144
+Network: Linea
+Module Address: 0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510
+Deployment Tx: 0x9b5d2be3d917db185e352356cdb373447a1c11bf1be63784d0f62f4aa52268f9
+Block Explorer: lineascan.build
+Wrapped Native: WETH (0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510 "settlement()" \
+  --rpc-url https://rpc.linea.build
+```
+</CodeGroup>
+
+**Links:**
+- [View on Lineascan](https://lineascan.build/address/0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510)
+- [Deployment Transaction](https://lineascan.build/tx/0x9b5d2be3d917db185e352356cdb373447a1c11bf1be63784d0f62f4aa52268f9)
+
+---
+
+### Base
+
+<CodeGroup>
+```yaml Details
+Chain ID: 8453
+Network: Base
+Module Address: 0xb7ec643b48fe7730ef701d10362a9f8a670ac018
+Deployment Tx: 0xc1e856978b945821e986a58ce9fcd6b78fac291be0ca9dc19731ba9ff087d3f6
+Block Explorer: basescan.org
+Wrapped Native: WETH (0x4200000000000000000000000000000000000006)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xb7ec643b48fe7730ef701d10362a9f8a670ac018 "settlement()" \
+  --rpc-url https://base.llamarpc.com
+```
+</CodeGroup>
+
+**Links:**
+- [View on Basescan](https://basescan.org/address/0xb7ec643b48fe7730ef701d10362a9f8a670ac018)
+- [Deployment Transaction](https://basescan.org/tx/0xc1e856978b945821e986a58ce9fcd6b78fac291be0ca9dc19731ba9ff087d3f6)
+
+---
+
+### Plasma
+
+<CodeGroup>
+```yaml Details
+Chain ID: 9745
+Network: Plasma
+Module Address: 0xEF0F60b1E985A748588d57e414aa3E9529b80714
+Deployment Tx: 0x0319ec27957d549be9558b076bf9878903fb64a10a1a4135afcf472706b64c4d
+Block Explorer: explorer.plasmamainnet.io
+Wrapped Native: WPLSM
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0xEF0F60b1E985A748588d57e414aa3E9529b80714 "settlement()" \
+  --rpc-url https://rpc.plasmamainnet.io
+```
+</CodeGroup>
+
+**Links:**
+- [View on Explorer](https://explorer.plasmamainnet.io/address/0xEF0F60b1E985A748588d57e414aa3E9529b80714)
+- [Deployment Transaction](https://explorer.plasmamainnet.io/tx/0x0319ec27957d549be9558b076bf9878903fb64a10a1a4135afcf472706b64c4d)
+
+---
+
+### Ink
+
+<CodeGroup>
+```yaml Details
+Chain ID: 57073
+Network: Ink
+Module Address: 0x406e71d2fc4871e1f18c076149ce0973dfe3e8f8
+Deployment Tx: 0xe051abf23646337000140993ca79c4a1fd632b92ec2aa8db11366c03a1fcfc89
+Block Explorer: explorer.inkonchain.com
+Wrapped Native: WINK
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0x406e71d2fc4871e1f18c076149ce0973dfe3e8f8 "settlement()" \
+  --rpc-url https://rpc.inkonchain.com
+```
+</CodeGroup>
+
+**Links:**
+- [View on Explorer](https://explorer.inkonchain.com/address/0x406e71d2fc4871e1f18c076149ce0973dfe3e8f8)
+- [Deployment Transaction](https://explorer.inkonchain.com/tx/0xe051abf23646337000140993ca79c4a1fd632b92ec2aa8db11366c03a1fcfc89)
+
+---
+
+## Testnet Deployments
+
+### Sepolia
+
+<CodeGroup>
+```yaml Details
+Chain ID: 11155111
+Network: Sepolia Testnet
+Module Address: 0x456ca0e6abf780140583ef3c8b5be2e7804278a6
+Deployment Tx: 0x7b5d5a5b19af53e92a592ff746c82f96e1c0dd1c5325c5c2bc21b1b9dc09bdd2
+Block Explorer: sepolia.etherscan.io
+Wrapped Native: WETH (0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14)
+Settlement: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+```bash Verify
+cast call 0x456ca0e6abf780140583ef3c8b5be2e7804278a6 "settlement()" \
+  --rpc-url https://sepolia.drpc.org
+```
+</CodeGroup>
+
+**Links:**
+- [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x456ca0e6abf780140583ef3c8b5be2e7804278a6)
+- [Deployment Transaction](https://sepolia.etherscan.io/tx/0x7b5d5a5b19af53e92a592ff746c82f96e1c0dd1c5325c5c2bc21b1b9dc09bdd2)
+
+<Note>
+  Sepolia is recommended for testing deployments before going to mainnet.
+</Note>
+
+---
+
+## Network Summary
+
+| Network | Chain ID | Module Address | Block Explorer |
+|---------|----------|----------------|----------------|
+| Ethereum | 1 | `0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2` | [View](https://etherscan.io/address/0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2) |
+| Gnosis | 100 | `0x264843e85f8449ee3e9436253f3b8c0282dd4795` | [View](https://gnosisscan.io/address/0x264843e85f8449ee3e9436253f3b8c0282dd4795) |
+| Polygon | 137 | `0xaf717efcfec02a65101e3ffb3c07234b8705cafc` | [View](https://polygonscan.com/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc) |
+| Arbitrum | 42161 | `0xaf717efcfec02a65101e3ffb3c07234b8705cafc` | [View](https://arbiscan.io/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc) |
+| Avalanche | 43114 | `0xaf717efcfec02a65101e3ffb3c07234b8705cafc` | [View](https://snowtrace.io/address/0xaf717efcfec02a65101e3ffb3c07234b8705cafc) |
+| BNB Chain | 56 | `0xab8bc499b69c56a0c14778ee162bfe245eb26ed9` | [View](https://bscscan.com/address/0xab8bc499b69c56a0c14778ee162bfe245eb26ed9) |
+| Linea | 59144 | `0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510` | [View](https://lineascan.build/address/0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510) |
+| Base | 8453 | `0xb7ec643b48fe7730ef701d10362a9f8a670ac018` | [View](https://basescan.org/address/0xb7ec643b48fe7730ef701d10362a9f8a670ac018) |
+| Plasma | 9745 | `0xEF0F60b1E985A748588d57e414aa3E9529b80714` | [View](https://explorer.plasmamainnet.io/address/0xEF0F60b1E985A748588d57e414aa3E9529b80714) |
+| Ink | 57073 | `0x406e71d2fc4871e1f18c076149ce0973dfe3e8f8` | [View](https://explorer.inkonchain.com/address/0x406e71d2fc4871e1f18c076149ce0973dfe3e8f8) |
+| Sepolia | 11155111 | `0x456ca0e6abf780140583ef3c8b5be2e7804278a6` | [View](https://sepolia.etherscan.io/address/0x456ca0e6abf780140583ef3c8b5be2e7804278a6) |
+
+## Verifying Deployments
+
+You can verify any deployment using Cast:
+
+```bash
+# Check if contract exists
+cast code <module-address> --rpc-url <rpc-url>
+
+# Read settlement address (should be 0x9008D19f58AAbD9eD0D60971565AA8510560ab41)
+cast call <module-address> "settlement()" --rpc-url <rpc-url>
+
+# Check all constructor parameters
+cast call <module-address> "safe()" --rpc-url <rpc-url>
+cast call <module-address> "wrappedNativeToken()" --rpc-url <rpc-url>
+cast call <module-address> "keeper()" --rpc-url <rpc-url>
+cast call <module-address> "appData()" --rpc-url <rpc-url>
+cast call <module-address> "receiver()" --rpc-url <rpc-url>
+cast call <module-address> "minOut()" --rpc-url <rpc-url>
+```
+
+## Comparing Deployments
+
+If you deploy a new instance and want to compare parameters with an existing deployment:
+
+```bash
+yarn ts-node compare-deployments.ts \
+  --network <network-name> \
+  <new-module-address>
+```
+
+This script compares the new deployment's parameters with the existing deployment on that network.
+
+## Common Configuration
+
+All deployments share:
+
+- **Settlement Contract**: `0x9008D19f58AAbD9eD0D60971565AA8510560ab41` (CoW Protocol Settlement)
+- **Contract Version**: Same source code across all networks
+- **License**: GPL-3.0-or-later
+
+Network-specific:
+
+- **Wrapped Native Token**: Varies by network (WETH, WXDAI, WAVAX, etc.)
+- **Target Safe**: Network-specific Safe addresses
+- **Keeper**: Network-specific keeper accounts
+- **Receiver**: Network-specific fee recipients
+- **Min Out**: Network-specific minimum output thresholds
+
+## RPC Endpoints
+
+Recommended RPC endpoints for each network:
+
+<CodeGroup>
+```bash Ethereum
+RPC_URL=https://eth.llamarpc.com
+```
+
+```bash Gnosis
+RPC_URL=https://1rpc.io/gnosis
+```
+
+```bash Polygon
+RPC_URL=https://polygon-rpc.com
+```
+
+```bash Arbitrum
+RPC_URL=https://arb1.arbitrum.io/rpc
+```
+
+```bash Avalanche
+RPC_URL=https://api.avax.network/ext/bc/C/rpc
+```
+
+```bash BNB Chain
+RPC_URL=https://bsc-dataseed.binance.org
+```
+
+```bash Linea
+RPC_URL=https://rpc.linea.build
+```
+
+```bash Base
+RPC_URL=https://base.llamarpc.com
+```
+
+```bash Sepolia
+RPC_URL=https://sepolia.drpc.org
+```
+</CodeGroup>
+
+<Note>
+  For more RPC options, visit [chainlist.org](https://chainlist.org) or [llamarpc.com](https://llamarpc.com)
+</Note>
+
+## Deployment JSON
+
+All deployment information is stored in `networks.json` in the repository:
+
+```json
+{
+  "COWFeeModule": {
+    "1": {
+      "address": "0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2",
+      "transactionHash": "0x53af2b8111fa359558843a7afff5227a9104da4fec5f368d322e8649c91c070a"
+    },
+    "100": {
+      "address": "0x264843e85f8449ee3e9436253f3b8c0282dd4795",
+      "transactionHash": "0xfc3f72d19b7eeb53dca8f4046246c46e12e5b12e965f708dd079fc1cfa20a562"
+    }
+    // ... more networks
+  }
+}
+```
+
+## Next Steps
+
+- [Deploy your own instance](/deployment/deploy-module)
+- [Enable the module](/deployment/enable-module) on your Safe
+- [Verify contracts](/deployment/verify-contract) on block explorers
+- Configure and run the keeper to process fees
+
+## Additional Resources
+
+- [CoW Protocol Contracts](https://github.com/cowprotocol/contracts)
+- [Safe Documentation](https://docs.safe.global)
+- [CoW Protocol Documentation](https://docs.cow.fi)

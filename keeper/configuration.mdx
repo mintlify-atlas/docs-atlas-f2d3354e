@@ -1,0 +1,415 @@
+---
+title: 'Configuration'
+description: 'Complete reference for keeper configuration options, CLI flags, and environment variables'
+---
+
+The keeper bot is configured through a combination of environment variables, command-line flags, and on-chain module parameters.
+
+## Environment Variables
+
+### Required
+
+<ParamField path="PRIVATE_KEY" type="string" required>
+  Private key of the keeper wallet
+  
+  **Important**: This wallet address must match the `keeper` address configured in the deployed COWFeeModule contract. The keeper validates this at startup in `ts/utils/readConfig.ts:119-125`.
+  
+  ```bash
+  PRIVATE_KEY=0x1234567890abcdef...
+  ```
+</ParamField>
+
+### Optional (for deployment)
+
+These are used when deploying the module contract, not for running the keeper:
+
+<ParamField path="RPC_URL" type="string">
+  RPC endpoint for blockchain connection (can also be set via `--rpc-url` CLI flag)
+  
+  ```bash
+  RPC_URL=https://eth.llamarpc.com
+  ```
+</ParamField>
+
+<ParamField path="RECEIVER" type="address">
+  Ethereum address that receives the swapped fees (deployment parameter)
+</ParamField>
+
+<ParamField path="WRAPPED_NATIVE_TOKEN" type="address">
+  ERC20 address of the wrapped native token (WETH, WXDAI, etc.)
+</ParamField>
+
+<ParamField path="KEEPER" type="address">
+  Address authorized to execute keeper operations
+</ParamField>
+
+<ParamField path="SETTLEMENT" type="address">
+  CoW Protocol settlement contract address
+  
+  Default: `0x9008D19f58AAbD9eD0D60971565AA8510560ab41`
+</ParamField>
+
+<ParamField path="APP_DATA" type="bytes32">
+  Hex-encoded appData hash for CoW Protocol orders
+  
+  Default: `0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b`
+  
+  Create custom appData at [explorer.cow.fi/appdata](https://explorer.cow.fi/appdata)
+</ParamField>
+
+<ParamField path="TARGET_SAFE" type="address">
+  Safe address that must be a whitelisted solver
+</ParamField>
+
+<ParamField path="MIN_OUT" type="uint256">
+  Minimum amount of wrapped native token (in wei) to accept as buyAmount
+</ParamField>
+
+## CLI Options
+
+From `ts/utils/readConfig.ts:21-75`, the keeper accepts the following command-line options:
+
+### Network Configuration
+
+<ParamField path="--network" type="string" required>
+  Network to operate on
+  
+  **Choices**: `mainnet`, `gnosis`, `arbitrum`, `base`, `sepolia`, `avalanche`, `polygon`, `bnb`, `linea`, `plasma`, `ink`
+  
+  ```bash
+  --network mainnet
+  ```
+  
+  Each network has default RPC URLs defined in `ts/config.ts:24-83`.
+</ParamField>
+
+<ParamField path="--rpc-url" type="string">
+  Custom RPC endpoint URL
+  
+  Overrides the default RPC URL for the selected network.
+  
+  ```bash
+  --rpc-url https://eth.llamarpc.com
+  ```
+</ParamField>
+
+<ParamField path="--module" type="address" required>
+  Address of the deployed COWFeeModule contract
+  
+  ```bash
+  --module 0x1234567890abcdef1234567890abcdef12345678
+  ```
+  
+  The keeper reads configuration from this contract on startup.
+</ParamField>
+
+### Order Configuration
+
+<ParamField path="--max-orders" type="number" default="250">
+  Maximum number of orders to place in a single drip call
+  
+  ```bash
+  --max-orders 100
+  ```
+  
+  From `index.ts:5-14` and `ts/drip/dripItAll.ts:37`, tokens are processed in batches of this size.
+</ParamField>
+
+<ParamField path="--buy-amount-slippage-bps" type="number" default="100">
+  Slippage tolerance in basis points (1 bp = 0.01%)
+  
+  Applied to quoted buyAmount when creating orders. Default 100 bps = 1%.
+  
+  ```bash
+  --buy-amount-slippage-bps 100
+  ```
+  
+  Implementation in `ts/drip/getTokensToSwap.ts:73-80`:
+  ```typescript
+  buyAmount: quotedAmount
+    .mul(10000 - config.buyAmountSlippageBps)
+    .div(10000)
+  ```
+</ParamField>
+
+### Token Discovery
+
+<ParamField path="--token-list-strategy" type="string" default="explorer">
+  Strategy to discover tokens held by the Settlement contract
+  
+  **Choices**: `explorer`, `chain`
+  
+  - **explorer**: Uses Ethplorer API (mainnet) or Blockscout API (Gnosis)
+  - **chain**: Scans Settlement contract `Trade` events on-chain
+  
+  ```bash
+  --token-list-strategy chain
+  ```
+  
+  See [Token Strategies](/keeper/token-strategies) for detailed comparison.
+</ParamField>
+
+<ParamField path="--lookback-range" type="number" default="1000">
+  Number of blocks to scan when using `chain` strategy
+  
+  ```bash
+  --lookback-range 5000
+  ```
+  
+  Only applies when `--token-list-strategy chain` is set. Implementation in `ts/drip/getTokenBalances.ts:127-137`.
+</ParamField>
+
+### Gas Configuration
+
+<ParamField path="--max-fee-per-gas" type="string">
+  Override maxFeePerGas transaction parameter (in GWEI)
+  
+  ```bash
+  --max-fee-per-gas 50
+  ```
+  
+  If not specified, fetched from the network via `getFeeData()`. See `ts/drip/drip.ts:59-69`.
+</ParamField>
+
+<ParamField path="--max-priority-fee-per-gas" type="string">
+  Override maxPriorityFeePerGas transaction parameter (in GWEI)
+  
+  ```bash
+  --max-priority-fee-per-gas 2
+  ```
+  
+  If not specified, fetched from the network via `getFeeData()`.
+</ParamField>
+
+### Interactive Options
+
+<ParamField path="-c, --confirm-drip" type="boolean" default="false">
+  Ask for confirmation before sending the drip transaction
+  
+  ```bash
+  --confirm-drip
+  ```
+  
+  Useful for testing or manual oversight. Implementation in `ts/drip/drip.ts:24-31`.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean">
+  Display help message with all available options
+  
+  ```bash
+  yarn ts-node index.ts --help
+  ```
+</ParamField>
+
+## On-Chain Configuration
+
+The keeper reads these parameters from the deployed COWFeeModule contract at startup (`ts/utils/readConfig.ts:99-118`):
+
+<ResponseField name="receiver" type="address">
+  Address that receives the swapped fees
+</ResponseField>
+
+<ResponseField name="wrappedNativeToken" type="address">
+  Address of the buy token (WETH, WXDAI, etc.)
+</ResponseField>
+
+<ResponseField name="vaultRelayer" type="address">
+  CoW Protocol Vault Relayer contract address
+</ResponseField>
+
+<ResponseField name="settlement" type="address">
+  CoW Protocol Settlement contract address (source of fees)
+</ResponseField>
+
+<ResponseField name="keeper" type="address">
+  Authorized keeper address (must match your wallet)
+</ResponseField>
+
+<ResponseField name="appData" type="bytes32">
+  AppData hash for orders
+</ResponseField>
+
+<ResponseField name="targetSafe" type="address">
+  Safe address for module execution
+</ResponseField>
+
+<ResponseField name="minOut" type="uint256">
+  Minimum output in wrapped native token (wei)
+</ResponseField>
+
+## Network-Specific Defaults
+
+Defined in `ts/config.ts:24-83`:
+
+<Tabs>
+  <Tab title="Mainnet">
+    ```typescript
+    {
+      rpcUrl: "https://eth.llamarpc.com",
+      explorer: "https://explorer.cow.fi",
+      chainId: 1
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Gnosis">
+    ```typescript
+    {
+      rpcUrl: "https://1rpc.io/gnosis",
+      explorer: "https://explorer.cow.fi/gc",
+      chainId: 100
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Arbitrum">
+    ```typescript
+    {
+      rpcUrl: "https://arb1.arbitrum.io/rpc",
+      explorer: "https://explorer.cow.fi/arb1",
+      chainId: 42161
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Base">
+    ```typescript
+    {
+      rpcUrl: "https://base.llamarpc.com",
+      explorer: "https://explorer.cow.fi/base",
+      chainId: 8453
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Sepolia">
+    ```typescript
+    {
+      rpcUrl: "https://sepolia.drpc.org",
+      explorer: "https://explorer.cow.fi/sepolia",
+      chainId: 11155111
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration Interface
+
+From `ts/config.ts:85-108`, the full configuration type:
+
+```typescript
+interface IConfig {
+  chainId: SupportedChainId;
+  privateKey: string;
+  options: object;
+  maxOrders: number;
+  module: string;
+  gpv2Settlement: string;
+  vaultRelayer: string;
+  rpcUrl: string;
+  maxFeePerGas?: BigNumber;
+  maxPriorityFeePerGas?: BigNumber;
+  network: "mainnet" | "gnosis" | "arbitrum" | "base" | "sepolia" | ...
+  wrappedNativeToken: string;
+  minOut: bigint;
+  targetSafe: string;
+  receiver: string;
+  buyAmountSlippageBps: number;
+  keeper: string;
+  appData: string;
+  tokenListStrategy: "explorer" | "chain";
+  lookbackRange: number;
+  confirmDrip: boolean;
+}
+```
+
+## Example Configurations
+
+### Mainnet Production
+
+```bash .env
+PRIVATE_KEY=0x...
+```
+
+```bash
+yarn ts-node index.ts \
+  --network mainnet \
+  --module 0x1234567890abcdef1234567890abcdef12345678 \
+  --max-orders 250 \
+  --buy-amount-slippage-bps 100
+```
+
+### Gnosis with Custom RPC
+
+```bash
+yarn ts-node index.ts \
+  --network gnosis \
+  --rpc-url https://rpc.gnosischain.com \
+  --module 0x... \
+  --token-list-strategy explorer
+```
+
+### Chain Strategy with Higher Lookback
+
+```bash
+yarn ts-node index.ts \
+  --network arbitrum \
+  --module 0x... \
+  --token-list-strategy chain \
+  --lookback-range 5000 \
+  --max-orders 100
+```
+
+### Test Mode with Confirmation
+
+```bash
+yarn ts-node index.ts \
+  --network sepolia \
+  --module 0x... \
+  --confirm-drip \
+  --max-fee-per-gas 10 \
+  --max-priority-fee-per-gas 1
+```
+
+## Validation
+
+The keeper performs validation on startup:
+
+<Note>
+**Keeper Address Validation**
+
+The wallet address derived from `PRIVATE_KEY` must match the `keeper` address stored in the module contract. From `ts/utils/readConfig.ts:121-125`:
+
+```typescript
+if (walletAddress.toLowerCase() !== keeper.toLowerCase()) {
+  throw new Error(
+    `The provided private key belongs to ${walletAddress}, ` +
+    `which doesn't match the keeper (${keeper})`
+  );
+}
+```
+</Note>
+
+<Warning>
+**AppData Validation**
+
+The computed appData hash must match the module's configured appData. From `ts/drip/swapTokens.ts:20-22`:
+
+```typescript
+if (appDataHex.toLowerCase() !== config.appData.toLowerCase()) {
+  throw new Error(`appData mismatch: ${appDataHex} != ${config.appData}`);
+}
+```
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running the Keeper" icon="play" href="/keeper/running-keeper">
+    Start running the keeper with your configuration
+  </Card>
+  
+  <Card title="Token Strategies" icon="filter" href="/keeper/token-strategies">
+    Understand token discovery strategies in detail
+  </Card>
+</CardGroup>

@@ -1,0 +1,508 @@
+---
+title: 'Docker Deployment'
+description: 'Run the CoW Fee Module keeper bot using Docker containers'
+---
+
+Docker provides an isolated, reproducible environment for running the keeper bot. This guide covers building and running the keeper with Docker.
+
+## Dockerfile Overview
+
+The project includes a production-ready Dockerfile (`Dockerfile:1-17`):
+
+```dockerfile
+FROM node:lts
+
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and yarn.lock files
+COPY package.json yarn.lock ./
+
+# Install dependencies with yarn
+RUN yarn
+
+# Copy the rest of the application code
+COPY . .
+
+# Run the script with yarn ts-node index.ts
+ENTRYPOINTYARN ["yarn", "ts-node", "index.ts"]
+```
+
+This Dockerfile:
+- Uses the official Node.js LTS base image
+- Installs dependencies via Yarn
+- Sets the entrypoint to run `yarn ts-node index.ts`
+- Allows passing CLI arguments to the keeper
+
+## Quick Start
+
+<Steps>
+  <Step title="Build the Docker image">
+    From the project root directory:
+    
+    ```bash
+    docker build -t cow-fee .
+    ```
+    
+    This creates a Docker image named `cow-fee` with all dependencies installed.
+  </Step>
+
+  <Step title="Run the container">
+    ```bash
+    source .env
+    
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network mainnet \
+      --module 0xYourModuleAddress \
+      --rpc-url https://eth.llamarpc.com
+    ```
+    
+    The `--rm` flag automatically removes the container after execution.
+  </Step>
+</Steps>
+
+## Usage Examples
+
+From `README.md:111-130`, here are practical Docker deployment examples:
+
+### Basic Mainnet Deployment
+
+```bash
+source .env
+
+# Build the image
+docker build -t cow-fee .
+
+# Run the keeper
+docker run --rm \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --max-orders 250 \
+  --rpc-url $RPC_URL \
+  --buy-amount-slippage-bps 100 \
+  --module 0xYourModuleAddress \
+  --token-list-strategy chain \
+  --lookback-range 1000
+```
+
+### Using Environment File
+
+Instead of passing `PRIVATE_KEY` via `-e`, use Docker's `--env-file`:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  cow-fee \
+  --network gnosis \
+  --module 0xYourModuleAddress
+```
+
+### All Networks
+
+<Tabs>
+  <Tab title="Mainnet">
+    ```bash
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network mainnet \
+      --module 0xYourModuleAddress \
+      --rpc-url https://eth.llamarpc.com
+    ```
+  </Tab>
+
+  <Tab title="Gnosis">
+    ```bash
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network gnosis \
+      --module 0xYourModuleAddress \
+      --rpc-url https://1rpc.io/gnosis
+    ```
+  </Tab>
+
+  <Tab title="Arbitrum">
+    ```bash
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network arbitrum \
+      --module 0xYourModuleAddress \
+      --rpc-url https://arb1.arbitrum.io/rpc \
+      --token-list-strategy chain \
+      --lookback-range 5000
+    ```
+  </Tab>
+
+  <Tab title="Base">
+    ```bash
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network base \
+      --module 0xYourModuleAddress \
+      --rpc-url https://base.llamarpc.com \
+      --token-list-strategy chain
+    ```
+  </Tab>
+
+  <Tab title="Sepolia">
+    ```bash
+    docker run --rm \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network sepolia \
+      --module 0xYourModuleAddress \
+      --rpc-url https://sepolia.drpc.org
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced Configuration
+
+### Custom Gas Settings
+
+```bash
+docker run --rm \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --module 0xYourModuleAddress \
+  --max-fee-per-gas 50 \
+  --max-priority-fee-per-gas 2
+```
+
+### Chain Strategy with Extended Lookback
+
+```bash
+docker run --rm \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network arbitrum \
+  --module 0xYourModuleAddress \
+  --token-list-strategy chain \
+  --lookback-range 10000 \
+  --max-orders 100
+```
+
+### Interactive Confirmation Mode
+
+<Warning>
+Interactive mode (`--confirm-drip`) requires a TTY. Use the `-it` flags:
+</Warning>
+
+```bash
+docker run --rm -it \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network sepolia \
+  --module 0xYourModuleAddress \
+  --confirm-drip
+```
+
+## Production Deployment
+
+### Docker Compose
+
+Create a `docker-compose.yml` for easier management:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  keeper:
+    build: .
+    image: cow-fee:latest
+    environment:
+      - PRIVATE_KEY=${PRIVATE_KEY}
+    command: [
+      "--network", "mainnet",
+      "--module", "0xYourModuleAddress",
+      "--rpc-url", "https://eth.llamarpc.com",
+      "--max-orders", "250",
+      "--buy-amount-slippage-bps", "100"
+    ]
+    restart: "no"
+```
+
+Run with:
+
+```bash
+source .env
+docker-compose up
+```
+
+### Scheduled Execution with Cron
+
+Create a cron job to run the Docker container periodically:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Run every hour
+0 * * * * cd /path/to/cow-fee && source .env && docker run --rm -e PRIVATE_KEY=$PRIVATE_KEY cow-fee --network mainnet --module 0x... >> /var/log/keeper.log 2>&1
+```
+
+### Kubernetes CronJob
+
+For Kubernetes deployments:
+
+```yaml keeper-cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cow-fee-keeper
+spec:
+  schedule: "0 * * * *"  # Every hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: keeper
+            image: cow-fee:latest
+            env:
+            - name: PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: keeper-secrets
+                  key: private-key
+            args:
+            - "--network"
+            - "mainnet"
+            - "--module"
+            - "0xYourModuleAddress"
+            - "--rpc-url"
+            - "https://eth.llamarpc.com"
+          restartPolicy: OnFailure
+```
+
+Deploy with:
+
+```bash
+kubectl apply -f keeper-cronjob.yaml
+```
+
+## Image Management
+
+### Tagging Versions
+
+```bash
+# Build with version tag
+docker build -t cow-fee:v1.0.0 .
+docker build -t cow-fee:latest .
+
+# Run specific version
+docker run --rm -e PRIVATE_KEY=$PRIVATE_KEY cow-fee:v1.0.0 --network mainnet --module 0x...
+```
+
+### Pushing to Registry
+
+For private registry deployment:
+
+```bash
+# Tag for registry
+docker tag cow-fee:latest registry.example.com/cow-fee:latest
+
+# Push to registry
+docker push registry.example.com/cow-fee:latest
+
+# Pull and run on remote server
+docker pull registry.example.com/cow-fee:latest
+docker run --rm -e PRIVATE_KEY=$PRIVATE_KEY registry.example.com/cow-fee:latest --network mainnet --module 0x...
+```
+
+## Logging and Monitoring
+
+### Capture Logs
+
+```bash
+# Run with logs to file
+docker run --rm \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --module 0xYourModuleAddress \
+  > keeper-$(date +%Y%m%d-%H%M%S).log 2>&1
+```
+
+### View Container Logs
+
+For detached containers:
+
+```bash
+# Run in detached mode
+docker run -d \
+  --name keeper-mainnet \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --module 0xYourModuleAddress
+
+# View logs
+docker logs keeper-mainnet
+
+# Follow logs
+docker logs -f keeper-mainnet
+
+# Cleanup
+docker rm keeper-mainnet
+```
+
+### Docker Logging Drivers
+
+Configure logging driver for production:
+
+```bash
+docker run --rm \
+  --log-driver json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --module 0xYourModuleAddress
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build fails with dependency errors">
+    **Solution**: Clear Docker cache and rebuild:
+    
+    ```bash
+    docker build --no-cache -t cow-fee .
+    ```
+  </Accordion>
+
+  <Accordion title="Container exits immediately">
+    **Check logs**:
+    
+    ```bash
+    docker run -e PRIVATE_KEY=$PRIVATE_KEY cow-fee --network mainnet --module 0x...
+    ```
+    
+    Common causes:
+    - Missing `PRIVATE_KEY`
+    - Invalid module address
+    - Network connection issues
+  </Accordion>
+
+  <Accordion title="Cannot connect to RPC">
+    **Solution**: Test RPC connectivity from container:
+    
+    ```bash
+    docker run --rm cow-fee --help
+    docker run --rm -e PRIVATE_KEY=$PRIVATE_KEY cow-fee --network mainnet --module 0x... --rpc-url https://eth.llamarpc.com
+    ```
+    
+    Try alternative RPC providers from [Configuration](/keeper/configuration).
+  </Accordion>
+
+  <Accordion title="Out of memory errors">
+    **Solution**: Increase Docker memory limits:
+    
+    ```bash
+    docker run --rm \
+      --memory="2g" \
+      -e PRIVATE_KEY=$PRIVATE_KEY \
+      cow-fee \
+      --network mainnet \
+      --module 0xYourModuleAddress
+    ```
+  </Accordion>
+
+  <Accordion title="Permission denied errors">
+    **Solution**: Ensure `.env` file is readable:
+    
+    ```bash
+    chmod 600 .env
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security Best Practices
+
+<Warning>
+**Protect Your Private Key**
+
+1. **Never include private keys in the Docker image**
+2. **Use Docker secrets** for sensitive data:
+   ```bash
+   echo $PRIVATE_KEY | docker secret create keeper_pk -
+   ```
+3. **Use environment variables** only for ephemeral containers
+4. **Consider using** hardware wallets or key management services
+5. **Rotate keys** regularly
+6. **Limit container** network access
+</Warning>
+
+### Docker Secrets Example
+
+```bash
+# Create secret
+echo $PRIVATE_KEY | docker secret create keeper_pk -
+
+# Run with secret (Docker Swarm)
+docker service create \
+  --name keeper \
+  --secret keeper_pk \
+  cow-fee \
+  --network mainnet \
+  --module 0xYourModuleAddress
+```
+
+## Performance Optimization
+
+### Multi-Stage Build
+
+Optimize image size with a multi-stage Dockerfile:
+
+```dockerfile
+# Build stage
+FROM node:lts AS builder
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+COPY . .
+
+# Production stage
+FROM node:lts-alpine
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/index.ts ./
+COPY --from=builder /app/ts ./ts
+ENTRYPOINT ["yarn", "ts-node", "index.ts"]
+```
+
+Build with:
+
+```bash
+docker build -f Dockerfile.optimized -t cow-fee:optimized .
+```
+
+### Layer Caching
+
+The default Dockerfile already optimizes layer caching by copying `package.json` and `yarn.lock` first, then running `yarn install` before copying the rest of the code.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/keeper/configuration">
+    Fine-tune keeper parameters for Docker deployments
+  </Card>
+  
+  <Card title="Token Strategies" icon="filter" href="/keeper/token-strategies">
+    Optimize token discovery for your environment
+  </Card>
+  
+  <Card title="Running Keeper" icon="play" href="/keeper/running-keeper">
+    Learn about non-Docker deployment options
+  </Card>
+</CardGroup>

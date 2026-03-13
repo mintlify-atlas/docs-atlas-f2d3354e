@@ -1,0 +1,113 @@
+---
+title: "drip"
+description: "Commit presignatures for sell orders and optionally approve tokens"
+---
+
+## Function Signature
+
+```solidity
+function drip(
+    address[] calldata _approveTokens,
+    SwapToken[] calldata _swapTokens
+) external onlyKeeper
+```
+
+## Description
+
+Commit presignatures for sell orders of given tokens with specified amounts. Optionally, also approve the tokens to be spent to the vault relayer. This function handles native token wrapping and transfers wrapped native tokens to the receiver when balances exceed the minimum threshold.
+
+<Warning>
+This function can only be called by the keeper address. Calling from any other address will revert with `OnlyKeeper()` error.
+</Warning>
+
+## Parameters
+
+<ParamField path="_approveTokens" type="address[]" required>
+  Array of token addresses to approve for spending by the vault relayer. These tokens will be approved for `type(uint256).max` amount.
+</ParamField>
+
+<ParamField path="_swapTokens" type="SwapToken[]" required>
+  Array of `SwapToken` structs defining the tokens to swap and their amounts. See [SwapToken Structure](#swaptoken-structure) below.
+</ParamField>
+
+## SwapToken Structure
+
+```solidity
+struct SwapToken {
+    address token;      // Token address to sell
+    uint256 sellAmount; // Amount of tokens to sell
+    uint256 buyAmount;  // Minimum amount of wrapped native token to receive
+}
+```
+
+<ParamField path="token" type="address">
+  The address of the ERC20 token to sell in the swap order.
+</ParamField>
+
+<ParamField path="sellAmount" type="uint256">
+  The exact amount of the sell token to be sold in the order.
+</ParamField>
+
+<ParamField path="buyAmount" type="uint256">
+  The minimum amount of wrapped native token (buy token) expected in return. Must be greater than or equal to `minOut` configured in the module.
+</ParamField>
+
+## Behavior
+
+The `drip` function performs the following operations:
+
+1. **Native Token Handling**: Checks the settlement contract's native token balance and wraps it if it exceeds `minOut`
+2. **Token Approvals**: Approves all tokens in `_approveTokens` array to the vault relayer with maximum allowance
+3. **Order Creation**: For each `SwapToken`, creates a CoW Protocol sell order with:
+   - Sell token and amount from the struct
+   - Buy token as wrapped native token
+   - Buy amount from the struct (validated against `minOut`)
+   - Valid until timestamp from `nextValidTo()`
+   - Partially fillable orders
+4. **Presignature Commitment**: Commits presignatures for each order to the settlement contract
+5. **Token Transfers**: Transfers wrapped native tokens to the receiver if balance exceeds `minOut`
+
+<Note>
+All orders created use the same buy token (wrapped native token) and receiver address configured in the module constructor.
+</Note>
+
+## Errors
+
+<ResponseField name="OnlyKeeper" type="error">
+  Reverts if the caller is not the authorized keeper address.
+</ResponseField>
+
+<ResponseField name="BuyAmountTooSmall" type="error">
+  Reverts if any `SwapToken.buyAmount` is less than the configured `minOut` value.
+</ResponseField>
+
+## Example Usage
+
+```solidity
+// Prepare tokens to approve
+address[] memory tokensToApprove = new address[](2);
+tokensToApprove[0] = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI
+tokensToApprove[1] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
+
+// Prepare swap orders
+COWFeeModule.SwapToken[] memory swaps = new COWFeeModule.SwapToken[](2);
+swaps[0] = COWFeeModule.SwapToken({
+    token: 0x6B175474E89094C44Da98b954EedeAC495271d0F,  // DAI
+    sellAmount: 1000 * 1e18,  // 1000 DAI
+    buyAmount: 0.5 * 1e18     // Min 0.5 WETH
+});
+swaps[1] = COWFeeModule.SwapToken({
+    token: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,  // USDC
+    sellAmount: 1000 * 1e6,   // 1000 USDC
+    buyAmount: 0.5 * 1e18     // Min 0.5 WETH
+});
+
+// Call drip (must be called by keeper)
+feeModule.drip(tokensToApprove, swaps);
+```
+
+## Related Functions
+
+- [`nextValidTo()`](/api/next-valid-to) - Calculates the `validTo` timestamp used for orders
+- [`approve()`](/api/approve) - Approves tokens without creating orders
+- [`revoke()`](/api/revoke) - Revokes token approvals

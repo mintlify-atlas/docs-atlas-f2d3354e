@@ -1,0 +1,245 @@
+---
+title: "dripItAll"
+description: "Main orchestration function for collecting and swapping fee tokens"
+---
+
+## Overview
+
+The `dripItAll` function is the primary entry point for the fee collection workflow. It orchestrates the entire process of:
+1. Calculating ETH available to wrap
+2. Discovering tokens to swap
+3. Executing token swaps through CoW Protocol
+4. Wrapping native ETH if needed
+
+## Function Signature
+
+```typescript
+async function dripItAll(
+  config: IConfig,
+  signer: ethers.Signer,
+  provider: ethers.providers.JsonRpcProvider
+): Promise<void>
+```
+
+## Parameters
+
+<ParamField path="config" type="IConfig" required>
+  Configuration object containing all necessary settings for the fee collection process. See the [Configuration](/api/typescript/config) documentation for details.
+</ParamField>
+
+<ParamField path="signer" type="ethers.Signer" required>
+  Ethers.js signer instance used to sign and submit transactions. Should be initialized with the private key from the config.
+  
+  ```typescript
+  const signer = new ethers.Wallet(config.privateKey, provider);
+  ```
+</ParamField>
+
+<ParamField path="provider" type="ethers.providers.JsonRpcProvider" required>
+  JSON-RPC provider instance for interacting with the blockchain. Should be connected to the network specified in the config.
+  
+  ```typescript
+  const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+  ```
+</ParamField>
+
+## Return Value
+
+<ResponseField name="Promise<void>" type="Promise<void>">
+  Returns a Promise that resolves when the fee collection process completes. Does not return any value.
+</ResponseField>
+
+## Workflow
+
+The function executes the following steps:
+
+### 1. Calculate ETH to Wrap
+
+```typescript
+const ethToWrap = await getEthToWrap(config, provider);
+console.log("ETH to wrap:", formatUnits(ethToWrap, WETH_DECIMALS));
+```
+
+Determines the amount of native ETH available in the settlement contract that should be wrapped into WETH (or the network's wrapped native token).
+
+### 2. Discover Tokens to Swap
+
+```typescript
+const tokensToSwap = await getTokensToSwap(config, provider);
+console.log(
+  "Tokens to swap:",
+  tokensToSwap.map((token) => ({
+    symbol: token.symbol,
+    address: token.address,
+    balance: formatUnits(token.balance, token.decimals),
+    buyAmount: formatUnits(token.buyAmount, WETH_DECIMALS),
+    needsApproval: token.needsApproval,
+  }))
+);
+```
+
+Identifies all tokens held by the settlement contract that should be swapped for the wrapped native token. Includes balance information and approval requirements.
+
+### 3. Execute Token Swaps
+
+```typescript
+const moduleContract = new ethers.Contract(config.module, moduleAbi, signer);
+if (tokensToSwap.length > 0) {
+  for (let i = 0; i < tokensToSwap.length; i += config.maxOrders) {
+    const toSwap = tokensToSwap.slice(i, i + config.maxOrders);
+    try {
+      await swapTokens(moduleContract, config, signer, toSwap);
+    } catch (err) {
+      console.error("Error dripping:", err);
+    }
+    break;
+  }
+}
+```
+
+Batches tokens into groups (based on `config.maxOrders`) and submits swap orders through the CoW Fee Module contract.
+
+<Note>
+  The function includes a `break` statement after the first batch, which means only the first batch of tokens will be processed in the current implementation.
+</Note>
+
+### 4. Handle ETH Wrapping (No Tokens Case)
+
+```typescript
+else if (ethToWrap.gt(0)) {
+  await drip({
+    chainId: config.chainId,
+    moduleContract,
+    signer,
+    toApprove: [],
+    toDrip: [],
+    maxFeePerGas: config.maxFeePerGas,
+    maxPriorityFeePerGas: config.maxPriorityFeePerGas,
+    confirmDrip: config.confirmDrip,
+  });
+}
+```
+
+If there are no tokens to swap but ETH is available to wrap, triggers a drip operation to wrap the ETH without any token swaps.
+
+### 5. Calculate and Report Expected Proceeds
+
+```typescript
+let expectedBuy = tokensToSwap.reduce(
+  (sum, toSwap) => sum.add(toSwap.buyAmount),
+  ethers.BigNumber.from(0)
+);
+
+const expectedToReceive = expectedBuy.add(ethToWrap);
+const decimals = await buyTokenContract.decimals();
+const expectedUnits = ethers.utils.formatUnits(expectedToReceive, decimals);
+const expectedUnitsFormatted = parseFloat(expectedUnits).toFixed(2);
+
+console.log(
+  `Fee collection for chain ${config.network} initiated (${tokensToSwap.length} orders). ` +
+  `Expecting proceeds of ${expectedUnitsFormatted} ${await buyTokenContract.symbol()}!\n\n` +
+  `Follow the progress at ${networkSpecificConfigs[config.network].explorer}/address/${config.gpv2Settlement}`
+);
+```
+
+Calculates the total expected output (sum of all token swap outputs plus wrapped ETH) and logs a summary with a link to the CoW Explorer for tracking.
+
+## Usage Example
+
+```typescript
+import { dripItAll } from "./drip/dripItAll";
+import { IConfig, networkSpecificConfigs } from "./config";
+import { ethers } from "ethers";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
+
+// Initialize configuration
+const config: IConfig = {
+  network: "gnosis",
+  chainId: SupportedChainId.GNOSIS_CHAIN,
+  rpcUrl: networkSpecificConfigs.gnosis.rpcUrl,
+  privateKey: process.env.PRIVATE_KEY!,
+  module: "0x...",
+  gpv2Settlement: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  vaultRelayer: "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110",
+  wrappedNativeToken: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+  targetSafe: "0x...",
+  receiver: "0x...",
+  keeper: "0x...",
+  maxOrders: 10,
+  minOut: BigInt(0),
+  buyAmountSlippageBps: 100,
+  appData: "0x",
+  tokenListStrategy: "chain",
+  lookbackRange: 10000,
+  confirmDrip: true,
+  options: {},
+};
+
+// Create provider and signer
+const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+const signer = new ethers.Wallet(config.privateKey, provider);
+
+// Execute fee collection
+await dripItAll(config, signer, provider);
+```
+
+## Console Output Example
+
+```
+ETH to wrap: 0.5
+Tokens to swap: [
+  {
+    symbol: 'USDC',
+    address: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
+    balance: '125.50',
+    buyAmount: '0.0425',
+    needsApproval: false
+  },
+  {
+    symbol: 'GNO',
+    address: '0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb',
+    balance: '0.75',
+    buyAmount: '0.135',
+    needsApproval: true
+  }
+]
+Fee collection for chain gnosis initiated (2 orders). Expecting proceeds of 0.68 WXDAI!
+
+Follow the progress at https://explorer.cow.fi/gc/address/0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+```
+
+## Error Handling
+
+The function includes basic error handling for token swap operations:
+
+```typescript
+try {
+  await swapTokens(moduleContract, config, signer, toSwap);
+} catch (err) {
+  console.error("Error dripping:", err);
+}
+```
+
+Errors are logged to the console but do not stop execution. The function will continue processing remaining batches.
+
+<Note>
+  The function does not throw errors explicitly. Monitor console output for error messages during execution.
+</Note>
+
+## Dependencies
+
+The function imports and uses several internal utilities:
+
+- `getEthToWrap`: Calculates available native ETH to wrap
+- `getTokensToSwap`: Discovers tokens and calculates swap parameters
+- `swapTokens`: Executes the actual token swap orders
+- `drip`: Low-level function to trigger the fee module
+- `moduleAbi` and `erc20Abi`: Contract ABIs for interactions
+
+## Constants
+
+```typescript
+const WETH_DECIMALS = 18;
+```
+
+Wrapped ETH (and most wrapped native tokens) use 18 decimals for formatting output.

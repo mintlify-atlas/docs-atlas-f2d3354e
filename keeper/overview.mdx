@@ -1,0 +1,215 @@
+---
+title: 'Keeper Overview'
+description: 'Understanding the CoW Fee Module keeper bot and its role in automated fee collection'
+---
+
+The CoW Fee Module keeper is a TypeScript bot that automates the collection of trading fees accumulated in the CoW Protocol Settlement contract. It monitors token balances, creates swap orders, and executes transactions to convert collected fees into a target token.
+
+## How It Works
+
+The keeper performs the following operations in each run:
+
+<Steps>
+  <Step title="Discover Tokens">
+    Identifies all tokens held by the Settlement contract using either:
+    - **Explorer Strategy**: Queries Ethplorer (Ethereum mainnet) or Blockscout (Gnosis Chain) APIs
+    - **Chain Strategy**: Scans `Trade` events from the Settlement contract on-chain
+  </Step>
+
+  <Step title="Filter Tokens">
+    Filters tokens based on:
+    - Real-time balance checks
+    - Liquidity validation via CoW Protocol quote API
+    - Minimum output threshold (`minOut` from module configuration)
+    - Slippage tolerance (configurable via `--buy-amount-slippage-bps`)
+  </Step>
+
+  <Step title="Create Orders">
+    Posts presigned orders to the CoW Protocol OrderBook API for each eligible token:
+    - Sell token: Fee token to swap
+    - Buy token: Wrapped native token (WETH, WXDAI, etc.)
+    - Uses PRESIGN signature scheme
+    - Includes configurable appData hash
+  </Step>
+
+  <Step title="Execute Drip">
+    Calls the `COWFeeModule.drip()` function which:
+    - Approves tokens that need approval to the Vault Relayer
+    - Presigns all orders on-chain
+    - Wraps any native ETH balance into WETH
+    - Transfers proceeds to the configured receiver address
+  </Step>
+</Steps>
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Keeper Bot (index.ts)                   │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ├─► readConfig() - Parse CLI & module
+                       │
+                       ├─► getEthToWrap() - Check ETH balance
+                       │
+                       ├─► getTokensToSwap()
+                       │   ├─► getTokenBalances() - Discover
+                       │   ├─► Quote API - Validate liquidity
+                       │   └─► Filter by minOut
+                       │
+                       ├─► postOrders() - Create presign orders
+                       │
+                       └─► drip()
+                           └─► executeTransaction() - Send tx
+```
+
+## Key Components
+
+### Configuration
+
+The keeper reads configuration from:
+- **Environment variables**: `PRIVATE_KEY` (required)
+- **CLI arguments**: Network, module address, RPC URL, options
+- **On-chain module state**: Settlement address, keeper address, minOut, appData, etc.
+
+See [configuration reference](/keeper/configuration) for details.
+
+### Token Discovery Strategies
+
+<CardGroup cols={2}>
+  <Card title="Explorer Strategy" icon="browser">
+    **Default method**
+    
+    Uses external APIs to quickly fetch token balances:
+    - Ethplorer API for Ethereum mainnet
+    - Blockscout API for Gnosis Chain
+    
+    Faster but limited to supported networks.
+  </Card>
+
+  <Card title="Chain Strategy" icon="link">
+    **Universal method**
+    
+    Scans Settlement contract `Trade` events on-chain:
+    - Works on any supported network
+    - Configurable lookback range
+    - Requires more RPC calls
+    
+    Use `--token-list-strategy chain` flag.
+  </Card>
+</CardGroup>
+
+## Supported Networks
+
+The keeper supports the following networks out of the box:
+
+- **mainnet** - Ethereum Mainnet
+- **gnosis** - Gnosis Chain
+- **arbitrum** - Arbitrum One
+- **base** - Base
+- **sepolia** - Sepolia Testnet
+- **avalanche** - Avalanche C-Chain
+- **polygon** - Polygon PoS
+- **bnb** - BNB Smart Chain
+- **linea** - Linea
+- **plasma** - Plasma Chain
+- **ink** - Ink Chain
+
+Each network has pre-configured RPC URLs and CoW Protocol explorer links in `ts/config.ts:24-83`.
+
+## Module Operations
+
+Besides the main `drip()` function, the COWFeeModule contract provides:
+
+<CodeGroup>
+```solidity approve()
+// Max approve tokens to vault relayer
+function approve(address[] calldata tokens) external onlyKeeper
+```
+
+```solidity revoke()
+// Revoke token approvals for specific spenders
+function revoke(
+  address[] calldata tokens,
+  address[] calldata spenders
+) external onlyKeeper
+```
+
+```solidity drip()
+// Main function: approve + presign + wrap ETH
+function drip(
+  address[] calldata toApprove,
+  Swap[] calldata swaps
+) external onlyKeeper
+```
+</CodeGroup>
+
+The keeper only uses `drip()` in normal operation.
+
+## Execution Flow
+
+From `index.ts:5-14` and `ts/drip/dripItAll.ts:14-81`:
+
+```typescript
+const main = async () => {
+  // 1. Read configuration from CLI and module contract
+  const [config, provider] = await readConfig();
+  
+  // 2. Connect wallet
+  const wallet = new ethers.Wallet(config.privateKey, provider);
+  
+  // 3. Execute the drip process
+  await dripItAll(config, wallet, provider);
+  
+  process.exit(0);
+};
+```
+
+The `dripItAll()` function:
+1. Checks ETH balance to wrap
+2. Gets filtered list of tokens to swap
+3. Batches tokens into groups of `maxOrders` (default 250)
+4. Posts orders and executes drip transaction
+5. Logs expected proceeds and explorer link
+
+## Transaction Handling
+
+The keeper uses EIP-1559 transactions with:
+- **Gas estimation**: Automatic via `estimateGas()`
+- **Fee parameters**: Optional override via `--max-fee-per-gas` and `--max-priority-fee-per-gas`
+- **Nonce management**: Explicit nonce fetching to avoid issues
+- **Confirmation**: Optional interactive confirmation with `-c` flag
+
+See `ts/drip/drip.ts:47-104` for implementation details.
+
+## Error Handling
+
+<Note>
+The keeper handles errors gracefully:
+- Failed order postings are logged but don't stop execution
+- Gas estimation failures throw descriptive errors
+- Keeper address validation ensures only authorized accounts can run
+- AppData hash verification prevents configuration mismatches
+</Note>
+
+If tokens fail to post as orders, they are excluded from the drip transaction.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/keeper/configuration">
+    Learn about all configuration options and CLI flags
+  </Card>
+  
+  <Card title="Running the Keeper" icon="play" href="/keeper/running-keeper">
+    Step-by-step guide to running the keeper locally
+  </Card>
+  
+  <Card title="Docker Deployment" icon="docker" href="/keeper/docker">
+    Deploy the keeper using Docker containers
+  </Card>
+  
+  <Card title="Token Strategies" icon="filter" href="/keeper/token-strategies">
+    Deep dive into token discovery strategies
+  </Card>
+</CardGroup>

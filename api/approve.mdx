@@ -1,0 +1,90 @@
+---
+title: "approve"
+description: "Approve tokens for spending by the vault relayer"
+---
+
+## Function Signature
+
+```solidity
+function approve(address[] calldata _tokens) external onlyKeeper
+```
+
+## Description
+
+Approve given tokens for spending by the settlement contract's vault relayer. This function grants maximum approval (`type(uint256).max`) to the vault relayer for each specified token, allowing it to transfer tokens from the target Safe during order settlement.
+
+<Warning>
+This function can only be called by the keeper address. Calling from any other address will revert with `OnlyKeeper()` error.
+</Warning>
+
+## Parameters
+
+<ParamField path="_tokens" type="address[]" required>
+  Array of ERC20 token addresses to approve for spending by the vault relayer. Each token will be approved for the maximum possible amount (`type(uint256).max`).
+</ParamField>
+
+## Behavior
+
+The function performs the following steps:
+
+1. Creates an array of interaction data with length equal to the number of tokens
+2. For each token in `_tokens`:
+   - Constructs an `approve` call to the token contract
+   - Sets the spender as `vaultRelayer` (obtained from settlement contract)
+   - Sets the amount as `type(uint256).max` (maximum uint256 value)
+3. Executes all approvals through the settlement contract's batch interaction mechanism
+4. Uses the target Safe's `execTransactionFromModuleReturnData` to execute on behalf of the Safe
+
+<Note>
+Approvals are set to the maximum uint256 value to minimize gas costs from repeated approval transactions. The vault relayer can only spend tokens during valid CoW Protocol order settlements.
+</Note>
+
+## Implementation Details
+
+Internally, the function:
+- Calls `_approveInteractions()` at `/home/daytona/workspace/source/src/COWFeeModule.sol:175` to build approval interaction data
+- Calls `_execInteractions()` at `/home/daytona/workspace/source/src/COWFeeModule.sol:204` to execute via the settlement contract
+- Each approval uses `IERC20.approve(vaultRelayer, type(uint256).max)`
+
+## Errors
+
+<ResponseField name="OnlyKeeper" type="error">
+  Reverts if the caller is not the authorized keeper address configured during module deployment.
+</ResponseField>
+
+## Security Considerations
+
+<Warning>
+Approving tokens grants the vault relayer permission to transfer tokens from the Safe. Ensure:
+- Only trusted tokens are approved
+- The vault relayer address is correct and controlled by CoW Protocol
+- Approvals can be revoked using the [`revoke()`](/api/revoke) function if needed
+</Warning>
+
+## Example Usage
+
+```solidity
+// Prepare array of token addresses to approve
+address[] memory tokens = new address[](3);
+tokens[0] = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI
+tokens[1] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
+tokens[2] = 0xdAC17F958D2ee523a2206206994597C13D831ec7; // USDT
+
+// Call approve function (must be called by keeper)
+feeModule.approve(tokens);
+```
+
+## Example: Approve Single Token
+
+```solidity
+// Approve a single token
+address[] memory tokens = new address[](1);
+tokens[0] = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI
+
+feeModule.approve(tokens);
+```
+
+## Related Functions
+
+- [`revoke()`](/api/revoke) - Revoke token approvals for specific spenders
+- [`drip()`](/api/drip) - Create swap orders (includes optional approval step)

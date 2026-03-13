@@ -1,0 +1,288 @@
+---
+title: 'Enable Module'
+description: 'Enable the CoW Fee Module on your Safe multisig'
+---
+
+## Overview
+
+After deploying the CoW Fee Module, it must be enabled on the target Safe before it can execute any operations. This guide covers multiple methods to enable the module on your Safe multisig.
+
+<Warning>
+  The module deployment only creates the contract. The Safe must explicitly enable it through a multisig transaction before the module can function.
+</Warning>
+
+## Prerequisites
+
+- CoW Fee Module deployed (see [Deploy Module](/deployment/deploy-module))
+- Access to the target Safe with sufficient signer threshold
+- Module address from deployment
+
+## Method 1: Safe Transaction Builder UI (Recommended)
+
+The easiest way to enable a module is through the Safe Transaction Builder interface.
+
+<Steps>
+  <Step title="Open Transaction Builder">
+    Navigate to the [Safe Transaction Builder](https://app.safe.global/share/safe-app?appUrl=https%3A%2F%2Fapps-portal.safe.global%2Ftx-builder) and connect your wallet.
+
+    <Note>
+      You must be a signer on the target Safe to create transactions.
+    </Note>
+  </Step>
+
+  <Step title="Select Target Safe">
+    Select the target Safe where you want to enable the module. This should be the same address you specified as `TARGET_SAFE` during deployment.
+
+    <Warning>
+      Ensure this Safe is a whitelisted CoW Protocol solver.
+    </Warning>
+  </Step>
+
+  <Step title="Load Safe Implementation ABI">
+    In the Transaction Builder:
+    1. Click on **"Use Implementation ABI"**
+    2. The Safe contract ABI will be loaded automatically
+    3. This provides access to all Safe contract functions
+  </Step>
+
+  <Step title="Configure enableModule Transaction">
+    Configure the transaction:
+
+    1. **Select Function**: Choose `enableModule` from the dropdown of available functions
+    2. **Module Address**: Enter your deployed CoW Fee Module address
+    3. Click **"Add new transaction"** to add it to the batch
+
+    Example:
+    ```
+    Function: enableModule(address)
+    module (address): 0x1234567890123456789012345678901234567890
+    ```
+  </Step>
+
+  <Step title="Send Transaction">
+    1. Review the transaction details
+    2. Click **"Send batch"**
+    3. Sign the transaction with your wallet
+    4. Wait for other signers to approve (if threshold > 1)
+    5. Execute the transaction once threshold is reached
+  </Step>
+
+  <Step title="Verify Module Enablement">
+    After execution, verify the module was enabled successfully:
+
+    ```bash
+    cast call $TARGET_SAFE "isModuleEnabled(address)" $MODULE_ADDRESS --rpc-url $RPC_URL
+    ```
+
+    This should return `true` (represented as `0x0000000000000000000000000000000000000000000000000000000000000001`).
+
+    You can also check on the Safe UI:
+    1. Go to your Safe on app.safe.global
+    2. Navigate to **Settings > Modules**
+    3. Verify the module address appears in the list
+  </Step>
+</Steps>
+
+## Method 2: Cast CLI with Safe Transaction
+
+For a more programmatic approach, you can use Cast to generate the transaction calldata.
+
+<Steps>
+  <Step title="Generate Calldata">
+    Generate the calldata for enabling the module:
+
+    ```bash
+    cast calldata "enableModule(address)" $MODULE_ADDRESS
+    ```
+
+    Example output:
+    ```
+    0x610b59250000000000000000000000001234567890123456789012345678901234567890
+    ```
+  </Step>
+
+  <Step title="Create Safe Transaction">
+    Use this calldata to create a Safe transaction. You have several options:
+
+    **Option A: Safe UI**
+    1. Go to your Safe on app.safe.global
+    2. Navigate to **New Transaction > Transaction Builder**
+    3. Enter the Safe's own address as the recipient
+    4. Paste the calldata
+    5. Submit and collect signatures
+
+    **Option B: Safe CLI**
+    ```bash
+    # Using Safe CLI (if installed)
+    safe-cli tx-builder \
+      --to $TARGET_SAFE \
+      --data "<calldata-from-step-1>"
+    ```
+
+    **Option C: Directly with Cast** (for single-signature Safes only)
+    ```bash
+    cast send $TARGET_SAFE \
+      "enableModule(address)" \
+      $MODULE_ADDRESS \
+      --private-key $PRIVATE_KEY \
+      --rpc-url $RPC_URL
+    ```
+
+    <Warning>
+      Option C only works if you're the sole owner of the Safe with threshold=1. For multisig Safes, use Option A or B.
+    </Warning>
+  </Step>
+
+  <Step title="Execute Transaction">
+    Once the transaction has enough signatures:
+    1. Execute it through the Safe UI
+    2. Wait for confirmation on-chain
+  </Step>
+
+  <Step title="Verify Enablement">
+    Verify the module is enabled:
+
+    ```bash
+    cast call $TARGET_SAFE "isModuleEnabled(address)" $MODULE_ADDRESS --rpc-url $RPC_URL
+    ```
+  </Step>
+</Steps>
+
+## Method 3: Foundry Script (Advanced)
+
+For automated deployments or testing, you can enable the module programmatically.
+
+<Note>
+  This method is included in the deployment script with the `SHOULD_ENABLE_MODULE` flag but should **only be used for local testing**, not production.
+</Note>
+
+```solidity
+// In deployment script
+bool shouldEnableModule = vm.envOr("SHOULD_ENABLE_MODULE", false);
+
+if (shouldEnableModule) {
+    vm.broadcast(receiver);
+    ISafe(targetSafe).enableModule(address(module));
+}
+```
+
+<Warning>
+  This approach requires the broadcaster to have direct execution rights on the Safe, which is typically not the case for production multisigs.
+</Warning>
+
+## Verifying Module Status
+
+After enabling the module, verify it's working correctly:
+
+### Check Module Enablement
+
+```bash
+# Using cast
+cast call $TARGET_SAFE "isModuleEnabled(address)" $MODULE_ADDRESS --rpc-url $RPC_URL
+
+# Expected output (true):
+# 0x0000000000000000000000000000000000000000000000000000000000000001
+```
+
+### List All Enabled Modules
+
+```bash
+cast call $TARGET_SAFE "getModulesPaginated(address,uint256)" \
+  0x0000000000000000000000000000000000000001 \
+  10 \
+  --rpc-url $RPC_URL
+```
+
+### Check via Safe UI
+
+1. Go to [app.safe.global](https://app.safe.global)
+2. Connect your wallet and select your Safe
+3. Navigate to **Settings > Modules**
+4. Verify your module address appears in the list
+
+## Disabling the Module
+
+If you need to disable the module later:
+
+### Using Safe UI
+
+1. Go to your Safe on app.safe.global
+2. Navigate to **Settings > Modules**
+3. Find the module you want to disable
+4. Click the trash/remove icon
+5. Confirm and execute the transaction
+
+### Using Cast
+
+```bash
+# Generate calldata for disableModule
+# Note: Requires prevModule parameter (use address(0x1) if it's the first/only module)
+cast calldata "disableModule(address,address)" \
+  0x0000000000000000000000000000000000000001 \
+  $MODULE_ADDRESS
+```
+
+Use this calldata in a Safe transaction as described in Method 2.
+
+## Troubleshooting
+
+### Module Already Enabled
+
+```
+Error: Module already enabled
+```
+
+**Solution**: The module is already enabled on this Safe. Verify with `isModuleEnabled`.
+
+### Not a Safe Owner
+
+```
+Error: Only owners can approve transactions
+```
+
+**Solution**: Ensure you're using an account that's a signer on the Safe.
+
+### Insufficient Signatures
+
+```
+Error: Not enough signatures
+```
+
+**Solution**: Collect signatures from enough owners to meet the Safe's threshold.
+
+### Transaction Reverted
+
+```
+Error: Transaction reverted
+```
+
+**Solution**: 
+- Verify the module address is correct
+- Ensure the Safe address is correct
+- Check if the module is already enabled
+
+## Security Considerations
+
+<Warning>
+  - Only enable modules you trust and have audited
+  - Verify the module address before enabling
+  - Ensure the module contract is verified on the block explorer
+  - Modules have significant permissions over the Safe
+  - Review the module's code and functionality before enablement
+  - Test on testnet before enabling on mainnet Safes
+  - Keep track of all enabled modules
+</Warning>
+
+## Next Steps
+
+Once the module is enabled:
+
+1. Configure and run the keeper to start processing fees
+2. Monitor module operations
+3. Review [deployed networks](/deployment/networks) for reference implementations
+
+## Additional Resources
+
+- [Safe Documentation - Modules](https://docs.safe.global/safe-smart-account/modules)
+- [Safe Transaction Builder](https://app.safe.global/share/safe-app?appUrl=https%3A%2F%2Fapps-portal.safe.global%2Ftx-builder)
+- [CoW Protocol Solver Documentation](https://docs.cow.fi/)

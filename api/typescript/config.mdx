@@ -1,0 +1,297 @@
+---
+title: "Configuration"
+description: "TypeScript configuration interfaces and network settings for the CoW Fee Module"
+---
+
+## Overview
+
+The configuration module provides TypeScript interfaces and network-specific settings for interacting with the CoW Protocol Fee Module across multiple chains.
+
+## IConfig Interface
+
+The main configuration interface that defines all required and optional parameters for the fee collection system.
+
+```typescript
+interface IConfig {
+  chainId: SupportedChainId;
+  privateKey: string;
+  options: object;
+  maxOrders: number;
+  module: string;
+  gpv2Settlement: string;
+  vaultRelayer: string;
+  rpcUrl: string;
+  maxFeePerGas?: BigNumber;
+  maxPriorityFeePerGas?: BigNumber;
+  network: (typeof SUPPORTED_NETWORKS)[number];
+  wrappedNativeToken: string;
+  minOut: bigint;
+  targetSafe: string;
+  receiver: string;
+  buyAmountSlippageBps: number;
+  keeper: string;
+  appData: string;
+  tokenListStrategy: "explorer" | "chain";
+  lookbackRange: number;
+  confirmDrip: boolean;
+}
+```
+
+### Configuration Fields
+
+<ParamField path="chainId" type="SupportedChainId" required>
+  The chain ID from the CoW Protocol SDK. Identifies which blockchain network to interact with.
+</ParamField>
+
+<ParamField path="privateKey" type="string" required>
+  Private key for signing transactions. Should be kept secure and never committed to version control.
+</ParamField>
+
+<ParamField path="options" type="object" required>
+  Additional configuration options for the module.
+</ParamField>
+
+<ParamField path="maxOrders" type="number" required>
+  Maximum number of orders to process in a single batch. Used to control transaction size and gas costs.
+</ParamField>
+
+<ParamField path="module" type="string" required>
+  Address of the CoW Fee Module contract on the target chain.
+</ParamField>
+
+<ParamField path="gpv2Settlement" type="string" required>
+  Address of the GPv2Settlement contract. This is the main CoW Protocol settlement contract.
+</ParamField>
+
+<ParamField path="vaultRelayer" type="string" required>
+  Address of the Vault Relayer contract used for token approvals and transfers.
+</ParamField>
+
+<ParamField path="rpcUrl" type="string" required>
+  RPC endpoint URL for connecting to the blockchain network.
+</ParamField>
+
+<ParamField path="maxFeePerGas" type="BigNumber">
+  Optional maximum fee per gas unit for EIP-1559 transactions. Controls transaction costs.
+</ParamField>
+
+<ParamField path="maxPriorityFeePerGas" type="BigNumber">
+  Optional maximum priority fee per gas for EIP-1559 transactions. Incentivizes faster inclusion.
+</ParamField>
+
+<ParamField path="network" type="string" required>
+  Network identifier. Must be one of the supported networks (mainnet, gnosis, arbitrum, base, sepolia, avalanche, polygon, bnb, linea, plasma, ink).
+</ParamField>
+
+<ParamField path="wrappedNativeToken" type="string" required>
+  Address of the wrapped native token (e.g., WETH on Ethereum, WXDAI on Gnosis Chain).
+</ParamField>
+
+<ParamField path="minOut" type="bigint" required>
+  Minimum output amount required for token swaps. Used for slippage protection.
+</ParamField>
+
+<ParamField path="targetSafe" type="string" required>
+  Address of the target Safe (multisig) wallet that receives the collected fees.
+</ParamField>
+
+<ParamField path="receiver" type="string" required>
+  Address that will receive the swapped tokens.
+</ParamField>
+
+<ParamField path="buyAmountSlippageBps" type="number" required>
+  Slippage tolerance in basis points (bps) for buy amounts. 100 bps = 1%.
+</ParamField>
+
+<ParamField path="keeper" type="string" required>
+  Address of the keeper bot or EOA that executes the fee collection operations.
+</ParamField>
+
+<ParamField path="appData" type="string" required>
+  Application-specific data attached to orders. Used for tracking and analytics.
+</ParamField>
+
+<ParamField path="tokenListStrategy" type="'explorer' | 'chain'" required>
+  Strategy for discovering tokens:
+  - `"explorer"`: Use blockchain explorer APIs (EthPlorer for Mainnet, Blockscout for Gnosis)
+  - `"chain"`: Query on-chain Trade events from the settlement contract
+</ParamField>
+
+<ParamField path="lookbackRange" type="number" required>
+  Number of blocks to look back when using the "chain" token list strategy. Defines the historical range for discovering traded tokens.
+</ParamField>
+
+<ParamField path="confirmDrip" type="boolean" required>
+  Whether to wait for transaction confirmation after dripping fees. Set to `true` for safer operation, `false` for faster execution.
+</ParamField>
+
+## NetworkDetails Interface
+
+Defines the network-specific configuration for each supported chain.
+
+```typescript
+interface NetworkDetails {
+  rpcUrl: string;
+  explorer: string;
+  chainId: SupportedChainId;
+}
+```
+
+<ParamField path="rpcUrl" type="string" required>
+  Default RPC endpoint for the network.
+</ParamField>
+
+<ParamField path="explorer" type="string" required>
+  CoW Explorer URL for the network.
+</ParamField>
+
+<ParamField path="chainId" type="SupportedChainId" required>
+  CoW Protocol chain identifier.
+</ParamField>
+
+## Supported Networks
+
+The module supports the following networks:
+
+```typescript
+const SUPPORTED_NETWORKS = [
+  "mainnet",
+  "gnosis",
+  "arbitrum",
+  "base",
+  "sepolia",
+  "avalanche",
+  "polygon",
+  "bnb",
+  "linea",
+  "plasma",
+  "ink",
+] as const;
+```
+
+## Network Configurations
+
+Pre-configured network settings available via the `networkSpecificConfigs` object:
+
+```typescript
+const networkSpecificConfigs: Record<
+  (typeof SUPPORTED_NETWORKS)[number],
+  NetworkDetails
+>
+```
+
+### Available Networks
+
+<ResponseField name="mainnet" type="NetworkDetails">
+  **Ethereum Mainnet**
+  - RPC: `https://eth.llamarpc.com`
+  - Explorer: `https://explorer.cow.fi`
+  - Chain ID: `SupportedChainId.MAINNET`
+</ResponseField>
+
+<ResponseField name="gnosis" type="NetworkDetails">
+  **Gnosis Chain**
+  - RPC: `https://1rpc.io/gnosis`
+  - Explorer: `https://explorer.cow.fi/gc`
+  - Chain ID: `SupportedChainId.GNOSIS_CHAIN`
+</ResponseField>
+
+<ResponseField name="arbitrum" type="NetworkDetails">
+  **Arbitrum One**
+  - RPC: `https://arb1.arbitrum.io/rpc`
+  - Explorer: `https://explorer.cow.fi/arb1`
+  - Chain ID: `SupportedChainId.ARBITRUM_ONE`
+</ResponseField>
+
+<ResponseField name="base" type="NetworkDetails">
+  **Base**
+  - RPC: `https://base.llamarpc.com`
+  - Explorer: `https://explorer.cow.fi/base`
+  - Chain ID: `SupportedChainId.BASE`
+</ResponseField>
+
+<ResponseField name="sepolia" type="NetworkDetails">
+  **Sepolia Testnet**
+  - RPC: `https://sepolia.drpc.org`
+  - Explorer: `https://explorer.cow.fi/sepolia`
+  - Chain ID: `SupportedChainId.SEPOLIA`
+</ResponseField>
+
+<ResponseField name="avalanche" type="NetworkDetails">
+  **Avalanche C-Chain**
+  - RPC: `https://api.avax.network/ext/bc/C/rpc`
+  - Explorer: `https://explorer.cow.fi/avax`
+  - Chain ID: `SupportedChainId.AVALANCHE`
+</ResponseField>
+
+<ResponseField name="polygon" type="NetworkDetails">
+  **Polygon PoS**
+  - RPC: `https://polygon-rpc.com`
+  - Explorer: `https://explorer.cow.fi/pol`
+  - Chain ID: `SupportedChainId.POLYGON`
+</ResponseField>
+
+<ResponseField name="bnb" type="NetworkDetails">
+  **BNB Chain**
+  - RPC: `https://bsc-dataseed.bnbchain.org`
+  - Explorer: `https://explorer.cow.fi/bnb`
+  - Chain ID: `SupportedChainId.BNB`
+</ResponseField>
+
+<ResponseField name="linea" type="NetworkDetails">
+  **Linea**
+  - RPC: `https://rpc.linea.build`
+  - Explorer: `https://explorer.cow.fi/linea`
+  - Chain ID: `SupportedChainId.LINEA`
+</ResponseField>
+
+<ResponseField name="plasma" type="NetworkDetails">
+  **Plasma**
+  - RPC: `https://rpc.plasma.to`
+  - Explorer: `https://explorer.cow.fi/plasma`
+  - Chain ID: `SupportedChainId.PLASMA`
+</ResponseField>
+
+<ResponseField name="ink" type="NetworkDetails">
+  **Ink**
+  - RPC: `https://rpc-gel.inkonchain.com`
+  - Explorer: `https://explorer.cow.fi/ink`
+  - Chain ID: `SupportedChainId.INK`
+</ResponseField>
+
+## Usage Example
+
+```typescript
+import { IConfig, networkSpecificConfigs, SUPPORTED_NETWORKS } from "./config";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { ethers } from "ethers";
+
+// Create a configuration for Gnosis Chain
+const config: IConfig = {
+  network: "gnosis",
+  chainId: SupportedChainId.GNOSIS_CHAIN,
+  rpcUrl: networkSpecificConfigs.gnosis.rpcUrl,
+  privateKey: process.env.PRIVATE_KEY!,
+  module: "0x...",
+  gpv2Settlement: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+  vaultRelayer: "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110",
+  wrappedNativeToken: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", // WXDAI
+  targetSafe: "0x...",
+  receiver: "0x...",
+  keeper: "0x...",
+  maxOrders: 10,
+  minOut: BigInt(0),
+  buyAmountSlippageBps: 100, // 1% slippage
+  appData: "0x",
+  tokenListStrategy: "chain",
+  lookbackRange: 10000,
+  confirmDrip: true,
+  options: {},
+  maxFeePerGas: ethers.BigNumber.from("5000000000"),
+  maxPriorityFeePerGas: ethers.BigNumber.from("1000000000"),
+};
+```
+
+<Note>
+  Always use environment variables or secure secret management for sensitive values like `privateKey`.
+</Note>

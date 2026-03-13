@@ -1,0 +1,345 @@
+---
+title: 'Verify Contract'
+description: 'Verify the CoW Fee Module contract on block explorers'
+---
+
+## Overview
+
+Contract verification makes your contract's source code publicly available on block explorers, allowing users to read the contract code and verify its functionality. This guide covers how to verify the CoW Fee Module contract if automatic verification failed during deployment.
+
+<Note>
+  If you used the `--verify` flag during deployment and it succeeded, you don't need to verify again.
+</Note>
+
+## Prerequisites
+
+- Deployed CoW Fee Module contract
+- Block explorer API key (Etherscan, Gnosisscan, Arbiscan, etc.)
+- All constructor parameters used during deployment
+- Environment variables configured
+
+## Verification Methods
+
+### Method 1: Forge Verify (Recommended)
+
+The easiest method is using Forge's built-in verification.
+
+<Steps>
+  <Step title="Load Environment Variables">
+    Load your environment configuration:
+
+    ```bash
+    source .env
+    ```
+  </Step>
+
+  <Step title="Prepare Constructor Arguments">
+    Encode the constructor arguments that were used during deployment:
+
+    ```bash
+    # Generate ABI-encoded constructor arguments
+    CONSTRUCTOR_ARGS=$(cast abi-encode \
+      "constructor(address,address,address,address,bytes32,address,uint256)" \
+      $SETTLEMENT \
+      $TARGET_SAFE \
+      $WRAPPED_NATIVE_TOKEN \
+      $KEEPER \
+      $APP_DATA \
+      $RECEIVER \
+      $MIN_OUT)
+
+    echo "Constructor args: $CONSTRUCTOR_ARGS"
+    ```
+
+    <Note>
+      These must exactly match the values used during deployment.
+    </Note>
+  </Step>
+
+  <Step title="Verify Contract">
+    Run the verification command:
+
+    ```bash
+    forge verify-contract \
+      <fee-module-address> \
+      COWFeeModule \
+      --chain-id <chain-id> \
+      --etherscan-api-key $ETHERSCAN_API_KEY \
+      --constructor-args $CONSTRUCTOR_ARGS
+    ```
+
+    **Example for Ethereum Mainnet (Chain ID 1):**
+    ```bash
+    forge verify-contract \
+      0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2 \
+      COWFeeModule \
+      --chain-id 1 \
+      --etherscan-api-key $ETHERSCAN_API_KEY \
+      --constructor-args $CONSTRUCTOR_ARGS
+    ```
+  </Step>
+
+  <Step title="Check Verification Status">
+    After submission, Forge will provide a link to check the verification status on the block explorer. Wait a few moments and check if the "Contract" tab on the block explorer now shows the source code.
+  </Step>
+</Steps>
+
+### Method 2: Complete Command (Single Line)
+
+For convenience, here's a complete single-line command:
+
+```bash
+source .env && forge verify-contract \
+  <fee-module-address> \
+  COWFeeModule \
+  --chain-id <chain-id> \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+## Network-Specific Verification
+
+<CodeGroup>
+```bash Ethereum Mainnet
+source .env && forge verify-contract \
+  0x8429bf5bad17925c364c8c30a3c2a1e0d76602d2 \
+  COWFeeModule \
+  --chain-id 1 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Gnosis Chain
+source .env && forge verify-contract \
+  0x264843e85f8449ee3e9436253f3b8c0282dd4795 \
+  COWFeeModule \
+  --chain-id 100 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Sepolia Testnet
+source .env && forge verify-contract \
+  0x456ca0e6abf780140583ef3c8b5be2e7804278a6 \
+  COWFeeModule \
+  --chain-id 11155111 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Polygon
+source .env && forge verify-contract \
+  0xaf717efcfec02a65101e3ffb3c07234b8705cafc \
+  COWFeeModule \
+  --chain-id 137 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Arbitrum
+source .env && forge verify-contract \
+  0xaf717efcfec02a65101e3ffb3c07234b8705cafc \
+  COWFeeModule \
+  --chain-id 42161 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Avalanche
+source .env && forge verify-contract \
+  0xaf717efcfec02a65101e3ffb3c07234b8705cafc \
+  COWFeeModule \
+  --chain-id 43114 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash BNB Chain
+source .env && forge verify-contract \
+  0xab8bc499b69c56a0c14778ee162bfe245eb26ed9 \
+  COWFeeModule \
+  --chain-id 56 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Base
+source .env && forge verify-contract \
+  0xb7ec643b48fe7730ef701d10362a9f8a670ac018 \
+  COWFeeModule \
+  --chain-id 8453 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+
+```bash Linea
+source .env && forge verify-contract \
+  0x94333F7b2dFc3bf7EBD4DBd161f6C8BC0C7d6510 \
+  COWFeeModule \
+  --chain-id 59144 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,address,bytes32,address,uint256)" $SETTLEMENT $TARGET_SAFE $WRAPPED_NATIVE_TOKEN $KEEPER $APP_DATA $RECEIVER $MIN_OUT)
+```
+</CodeGroup>
+
+## Chain IDs and Block Explorers
+
+| Network | Chain ID | Block Explorer | API Key Source |
+|---------|----------|----------------|----------------|
+| Ethereum | 1 | etherscan.io | [etherscan.io/apis](https://etherscan.io/apis) |
+| Gnosis | 100 | gnosisscan.io | [gnosisscan.io/apis](https://gnosisscan.io/apis) |
+| Sepolia | 11155111 | sepolia.etherscan.io | [etherscan.io/apis](https://etherscan.io/apis) |
+| Polygon | 137 | polygonscan.com | [polygonscan.com/apis](https://polygonscan.com/apis) |
+| Arbitrum | 42161 | arbiscan.io | [arbiscan.io/apis](https://arbiscan.io/apis) |
+| Avalanche | 43114 | snowtrace.io | [snowtrace.io/apis](https://snowtrace.io/apis) |
+| BNB Chain | 56 | bscscan.com | [bscscan.com/apis](https://bscscan.com/apis) |
+| Linea | 59144 | lineascan.build | [lineascan.build/apis](https://lineascan.build/apis) |
+| Base | 8453 | basescan.org | [basescan.org/apis](https://basescan.org/apis) |
+| Plasma | 9745 | explorer.plasmamainnet.io | N/A |
+| Ink | 57073 | explorer.inkonchain.com | N/A |
+
+<Note>
+  Some newer networks may not have API-based verification available. Check their block explorer documentation.
+</Note>
+
+## Constructor Parameters Reference
+
+The CoW Fee Module constructor requires these parameters in order:
+
+1. **settlement** (`address`) - CoW Protocol settlement contract
+2. **targetSafe** (`address`) - Safe where the module is enabled
+3. **wrappedNativeToken** (`address`) - Token to convert fees into
+4. **keeper** (`address`) - Authorized keeper account
+5. **appData** (`bytes32`) - CoW order metadata hash
+6. **receiver** (`address`) - Fee recipient address
+7. **minOut** (`uint256`) - Minimum output amount in wei
+
+## Verifying Constructor Arguments
+
+If you're unsure about the constructor arguments, you can read them from the deployed contract:
+
+```bash
+source .env
+
+# Read all constructor parameters
+echo "Settlement: $(cast call $MODULE_ADDRESS 'settlement()' --rpc-url $RPC_URL)"
+echo "Safe: $(cast call $MODULE_ADDRESS 'safe()' --rpc-url $RPC_URL)"
+echo "Wrapped Native: $(cast call $MODULE_ADDRESS 'wrappedNativeToken()' --rpc-url $RPC_URL)"
+echo "Keeper: $(cast call $MODULE_ADDRESS 'keeper()' --rpc-url $RPC_URL)"
+echo "App Data: $(cast call $MODULE_ADDRESS 'appData()' --rpc-url $RPC_URL)"
+echo "Receiver: $(cast call $MODULE_ADDRESS 'receiver()' --rpc-url $RPC_URL)"
+echo "Min Out: $(cast call $MODULE_ADDRESS 'minOut()' --rpc-url $RPC_URL)"
+```
+
+## Troubleshooting
+
+### Already Verified
+
+```
+Error: Contract already verified
+```
+
+**Solution**: The contract is already verified. Check the block explorer.
+
+### Constructor Arguments Mismatch
+
+```
+Error: Constructor arguments mismatch
+```
+
+**Solution**: 
+- Verify you're using the exact constructor arguments from deployment
+- Read the values from the deployed contract and re-encode them
+- Ensure byte order and formatting are correct
+
+### Invalid API Key
+
+```
+Error: Invalid API Key
+```
+
+**Solution**: 
+- Verify your `ETHERSCAN_API_KEY` is correct
+- Ensure you're using the right API key for the network
+- Check if the API key has verification permissions enabled
+
+### Compilation Failed
+
+```
+Error: Compilation failed
+```
+
+**Solution**: 
+- Ensure you're in the correct project directory
+- Verify Foundry dependencies are installed (`forge install`)
+- Check that the contract name is correct (`COWFeeModule`)
+
+### Network Not Supported
+
+```
+Error: Chain not supported
+```
+
+**Solution**: Some networks may not support automatic verification. Check if the block explorer has a manual verification interface.
+
+## Manual Verification (Alternative)
+
+If automatic verification fails, you can verify manually through the block explorer:
+
+<Steps>
+  <Step title="Flatten Contract">
+    Generate a flattened version of the contract:
+
+    ```bash
+    forge flatten src/COWFeeModule.sol > COWFeeModule-flat.sol
+    ```
+  </Step>
+
+  <Step title="Navigate to Block Explorer">
+    Go to your contract on the block explorer and find the "Verify & Publish" section.
+  </Step>
+
+  <Step title="Submit Verification">
+    Fill in the verification form:
+    - **Contract Address**: Your deployed module address
+    - **Compiler Type**: Solidity (Single file)
+    - **Compiler Version**: Match your `foundry.toml` settings
+    - **Open Source License**: GPL-3.0-or-later
+    - **Contract Source Code**: Paste contents of `COWFeeModule-flat.sol`
+    - **Constructor Arguments**: Use the ABI-encoded args from earlier
+    - **Optimization**: Enabled (if used in compilation)
+  </Step>
+
+  <Step title="Submit and Wait">
+    Submit the form and wait for verification to complete.
+  </Step>
+</Steps>
+
+## Verification Checklist
+
+After successful verification, confirm:
+
+- [ ] Source code is visible on block explorer
+- [ ] Constructor arguments are displayed correctly
+- [ ] Read functions show correct values
+- [ ] Contract ABI is available
+- [ ] Compiler version matches
+- [ ] License is displayed
+
+## Next Steps
+
+1. [Enable the module](/deployment/enable-module) on your Safe
+2. Review [deployed networks](/deployment/networks) for reference
+3. Configure and run the keeper to start processing fees
+
+## Security Considerations
+
+<Note>
+  Verified contracts provide transparency and allow users to:
+  - Read the contract code directly
+  - Verify the contract behavior matches documentation
+  - Interact with confidence knowing the code is auditable
+  - Detect any discrepancies between deployment and source code
+</Note>
+
+Always verify contracts on production networks to maintain transparency and trust.

@@ -1,0 +1,131 @@
+---
+title: "revoke"
+description: "Revoke token approvals for specified spenders"
+---
+
+## Function Signature
+
+```solidity
+function revoke(Revocation[] calldata _revocations) external onlyKeeper
+```
+
+## Description
+
+Revoke approvals for given tokens to given contracts by setting their allowance to zero. This function provides a safety mechanism to remove spending permissions previously granted to contracts, particularly useful for security purposes or when decommissioning integrations.
+
+<Warning>
+This function can only be called by the keeper address. Calling from any other address will revert with `OnlyKeeper()` error.
+</Warning>
+
+## Parameters
+
+<ParamField path="_revocations" type="Revocation[]" required>
+  Array of `Revocation` structs specifying which token approvals to revoke. See [Revocation Structure](#revocation-structure) below.
+</ParamField>
+
+## Revocation Structure
+
+```solidity
+struct Revocation {
+    address token;   // Token contract address
+    address spender; // Spender address to revoke approval from
+}
+```
+
+<ParamField path="token" type="address">
+  The address of the ERC20 token contract for which to revoke approval.
+</ParamField>
+
+<ParamField path="spender" type="address">
+  The address of the spender whose approval should be revoked (allowance set to 0).
+</ParamField>
+
+## Behavior
+
+The function performs the following operations:
+
+1. Creates an array of interaction data with length equal to the number of revocations
+2. For each `Revocation` in `_revocations`:
+   - Constructs an `approve` call to the token contract
+   - Sets the spender from `revocation.spender`
+   - Sets the approval amount to `0` (revoking the approval)
+3. Executes all revocations through the settlement contract's batch interaction mechanism
+4. Uses the target Safe's `execTransactionFromModuleReturnData` to execute on behalf of the Safe
+
+<Note>
+Revoking approval sets the allowance to exactly `0`. The spender will no longer be able to transfer any amount of the specified token from the Safe.
+</Note>
+
+## Implementation Details
+
+The implementation at `/home/daytona/workspace/source/src/COWFeeModule.sol:72`:
+- Iterates through each revocation using an unchecked increment for gas optimization
+- Encodes `IERC20.approve(revocation.spender, 0)` for each token-spender pair
+- Batches all revocations into a single settlement transaction
+- Executes via `_execInteractions()` at `/home/daytona/workspace/source/src/COWFeeModule.sol:204`
+
+## Errors
+
+<ResponseField name="OnlyKeeper" type="error">
+  Reverts if the caller is not the authorized keeper address configured during module deployment.
+</ResponseField>
+
+## Use Cases
+
+### Emergency Security Response
+Revoke approvals immediately if a vulnerability is discovered in a spender contract:
+
+```solidity
+COWFeeModule.Revocation[] memory revocations = new COWFeeModule.Revocation[](1);
+revocations[0] = COWFeeModule.Revocation({
+    token: 0x6B175474E89094C44Da98b954EedeAC495271d0F,  // DAI
+    spender: 0xVulnerableContract  // Compromised contract
+});
+
+feeModule.revoke(revocations);
+```
+
+### Routine Cleanup
+Revoke multiple approvals as part of maintenance:
+
+```solidity
+COWFeeModule.Revocation[] memory revocations = new COWFeeModule.Revocation[](2);
+revocations[0] = COWFeeModule.Revocation({
+    token: 0x6B175474E89094C44Da98b954EedeAC495271d0F,  // DAI
+    spender: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41  // Old vault relayer
+});
+revocations[1] = COWFeeModule.Revocation({
+    token: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,  // USDC
+    spender: 0x9008D19f58AAbD9eD0D60971565AA8510560ab41  // Old vault relayer
+});
+
+feeModule.revoke(revocations);
+```
+
+### Revoke Vault Relayer Approval
+
+```solidity
+// Revoke approval for multiple tokens from the vault relayer
+address vaultRelayer = feeModule.vaultRelayer();
+
+COWFeeModule.Revocation[] memory revocations = new COWFeeModule.Revocation[](3);
+revocations[0] = COWFeeModule.Revocation({
+    token: 0x6B175474E89094C44Da98b954EedeAC495271d0F,  // DAI
+    spender: vaultRelayer
+});
+revocations[1] = COWFeeModule.Revocation({
+    token: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,  // USDC
+    spender: vaultRelayer
+});
+revocations[2] = COWFeeModule.Revocation({
+    token: 0xdAC17F958D2ee523a2206206994597C13D831ec7,  // USDT
+    spender: vaultRelayer
+});
+
+feeModule.revoke(revocations);
+```
+
+## Related Functions
+
+- [`approve()`](/api/approve) - Grant token approvals to the vault relayer
+- [`drip()`](/api/drip) - Create swap orders with optional approval step

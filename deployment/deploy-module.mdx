@@ -1,0 +1,291 @@
+---
+title: 'Deploy Module'
+description: 'Deploy the CoW Fee Module contract using Forge'
+---
+
+## Overview
+
+This guide covers deploying the CoW Fee Module contract to your target network using Foundry's Forge tool. The deployment script reads configuration from your environment variables and deploys a new instance of the module.
+
+## Prerequisites
+
+- Environment variables configured (see [Environment Setup](/deployment/setup))
+- Foundry installed and up to date
+- Private key for deployment account with sufficient native tokens for gas
+- Block explorer API key (for contract verification)
+
+## Deployment Script
+
+The deployment uses the `DeployCOWFeeModule.s.sol` script, which:
+
+1. Reads configuration from environment variables
+2. Deploys the `COWFeeModule` contract with constructor parameters:
+   - `settlement` - CoW Protocol settlement contract
+   - `targetSafe` - Safe address where module will be enabled
+   - `wrappedNativeToken` - Token to convert fees into
+   - `keeper` - Account authorized to execute module operations
+   - `appData` - CoW order metadata hash
+   - `receiver` - Address to receive converted fees
+   - `minOut` - Minimum acceptable output amount
+
+<Note>
+  The script source is located at `script/DeployCOWFeeModule.s.sol`
+</Note>
+
+## Deployment Process
+
+<Steps>
+  <Step title="Load Environment Variables">
+    First, load your configured environment:
+
+    ```bash
+    source .env
+    ```
+
+    Verify critical variables are set:
+
+    ```bash
+    echo "RPC_URL: $RPC_URL"
+    echo "TARGET_SAFE: $TARGET_SAFE"
+    echo "RECEIVER: $RECEIVER"
+    ```
+  </Step>
+
+  <Step title="Dry Run Deployment">
+    Always perform a dry run first to verify the deployment will succeed:
+
+    ```bash
+    forge script ./script/DeployCOWFeeModule.s.sol \
+      --rpc-url $RPC_URL
+    ```
+
+    This simulates the deployment without broadcasting transactions. Review the output to ensure:
+    - All constructor parameters are correct
+    - Gas estimates are reasonable
+    - No errors occur during simulation
+
+    <Note>
+      The dry run doesn't require a private key and won't consume gas.
+    </Note>
+  </Step>
+
+  <Step title="Deploy Contract">
+    Once the dry run succeeds, deploy the contract:
+
+    <CodeGroup>
+    ```bash Deploy with Verification
+    forge script ./script/DeployCOWFeeModule.s.sol \
+      --rpc-url $RPC_URL \
+      --broadcast \
+      --verify \
+      --private-key <your-private-key>
+    ```
+
+    ```bash Deploy without Verification
+    forge script ./script/DeployCOWFeeModule.s.sol \
+      --rpc-url $RPC_URL \
+      --broadcast \
+      --private-key <your-private-key>
+    ```
+
+    ```bash Deploy with Hardware Wallet
+    forge script ./script/DeployCOWFeeModule.s.sol \
+      --rpc-url $RPC_URL \
+      --broadcast \
+      --verify \
+      --ledger \
+      --sender <your-ledger-address>
+    ```
+
+    ```bash Deploy with Keystore
+    forge script ./script/DeployCOWFeeModule.s.sol \
+      --rpc-url $RPC_URL \
+      --broadcast \
+      --verify \
+      --keystore <path-to-keystore> \
+      --password <keystore-password>
+    ```
+    </CodeGroup>
+
+    <Warning>
+      **Never expose private keys in plain text.** Consider using:
+      - Hardware wallets (Ledger/Trezor) with `--ledger` or `--trezor`
+      - Encrypted keystores with `--keystore`
+      - Environment variables: `--private-key $PRIVATE_KEY`
+    </Warning>
+
+    The `--verify` flag automatically verifies the contract on the block explorer after deployment.
+  </Step>
+
+  <Step title="Save Deployment Address">
+    After successful deployment, save the contract address from the output:
+
+    ```bash
+    # Example output:
+    # == Return ==
+    # 0: contract COWFeeModule 0x1234567890123456789012345678901234567890
+    
+    # Save this address for later steps
+    export MODULE_ADDRESS=0x1234567890123456789012345678901234567890
+    ```
+
+    <Note>
+      The deployment address will also be saved in the `broadcast/` directory.
+    </Note>
+  </Step>
+
+  <Step title="Verify Deployment">
+    Verify the deployment was successful by checking the contract on the block explorer:
+
+    **Example block explorer URLs:**
+    - **Ethereum**: `https://etherscan.io/address/<MODULE_ADDRESS>`
+    - **Gnosis**: `https://gnosisscan.io/address/<MODULE_ADDRESS>`
+    - **Arbitrum**: `https://arbiscan.io/address/<MODULE_ADDRESS>`
+    - **Base**: `https://basescan.org/address/<MODULE_ADDRESS>`
+    - **Polygon**: `https://polygonscan.com/address/<MODULE_ADDRESS>`
+
+    You can also verify the constructor parameters were set correctly:
+
+    ```bash
+    cast call $MODULE_ADDRESS "settlement()" --rpc-url $RPC_URL
+    cast call $MODULE_ADDRESS "safe()" --rpc-url $RPC_URL
+    cast call $MODULE_ADDRESS "wrappedNativeToken()" --rpc-url $RPC_URL
+    cast call $MODULE_ADDRESS "keeper()" --rpc-url $RPC_URL
+    cast call $MODULE_ADDRESS "receiver()" --rpc-url $RPC_URL
+    cast call $MODULE_ADDRESS "minOut()" --rpc-url $RPC_URL
+    ```
+  </Step>
+</Steps>
+
+## Deployment Options
+
+### Automatic Module Enablement (Local Only)
+
+For local Anvil testing, you can automatically enable the module during deployment:
+
+```bash
+# Set in .env
+SHOULD_ENABLE_MODULE=true
+```
+
+<Warning>
+  **DO NOT use this option for production deployments.** Module enablement should be done through the Safe multisig process.
+</Warning>
+
+### Network-Specific Deployments
+
+<CodeGroup>
+```bash Ethereum Mainnet
+forge script ./script/DeployCOWFeeModule.s.sol \
+  --rpc-url https://eth.llamarpc.com \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --private-key $PRIVATE_KEY
+```
+
+```bash Gnosis Chain
+forge script ./script/DeployCOWFeeModule.s.sol \
+  --rpc-url https://1rpc.io/gnosis \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --private-key $PRIVATE_KEY
+```
+
+```bash Arbitrum
+forge script ./script/DeployCOWFeeModule.s.sol \
+  --rpc-url https://arb1.arbitrum.io/rpc \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --private-key $PRIVATE_KEY
+```
+
+```bash Base
+forge script ./script/DeployCOWFeeModule.s.sol \
+  --rpc-url https://base.llamarpc.com \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --private-key $PRIVATE_KEY
+```
+
+```bash Sepolia Testnet
+forge script ./script/DeployCOWFeeModule.s.sol \
+  --rpc-url https://sepolia.drpc.org \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --private-key $PRIVATE_KEY
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Insufficient Gas
+
+```bash
+Error: insufficient funds for gas * price + value
+```
+
+**Solution**: Ensure your deployment account has enough native tokens for gas.
+
+### Missing Environment Variable
+
+```bash
+Error: Environment variable "RECEIVER" not found
+```
+
+**Solution**: Verify all required variables are set in `.env` and run `source .env`.
+
+### Verification Failed
+
+```bash
+Error: Failed to verify contract
+```
+
+**Solution**: You can verify the contract manually later. See [Verify Contract](/deployment/verify-contract).
+
+### RPC Connection Issues
+
+```bash
+Error: Failed to connect to RPC
+```
+
+**Solution**: 
+- Check your `RPC_URL` is correct and accessible
+- Try an alternative RPC endpoint
+- Verify network connectivity
+
+## Validating Deployment Parameters
+
+If you're redeploying the module with updated parameters, compare them with the current deployment:
+
+```bash
+yarn ts-node compare-deployments.ts \
+  --network <network-name> \
+  <new-module-address>
+```
+
+This helps ensure the new deployment has the expected configuration changes.
+
+## Next Steps
+
+After successful deployment:
+
+1. If verification failed during deployment, [verify the contract manually](/deployment/verify-contract)
+2. [Enable the module on your Safe](/deployment/enable-module)
+3. Check [deployed networks](/deployment/networks) for existing deployments
+
+## Security Considerations
+
+<Warning>
+  - Always dry run deployments first
+  - Verify all constructor parameters before broadcasting
+  - Use hardware wallets for mainnet deployments
+  - Save deployment addresses and transaction hashes
+  - Test on testnet (Sepolia) before mainnet deployment
+  - Ensure the `TARGET_SAFE` is a whitelisted CoW Protocol solver
+  - Verify `MIN_OUT` is set to a reasonable value to avoid dust transactions
+</Warning>

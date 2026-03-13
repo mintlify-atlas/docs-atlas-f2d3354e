@@ -1,0 +1,449 @@
+---
+title: 'Troubleshooting'
+description: 'Diagnose and resolve common issues with the CoW Fee Module'
+---
+
+This guide helps you identify and resolve common operational issues with the CoW Fee Module.
+
+## Common Errors
+
+### OnlyKeeper Error
+
+**Symptom:**
+```
+Error: Transaction reverted with custom error 'OnlyKeeper()'
+```
+
+**Cause:**
+The transaction was sent from an address other than the designated keeper address.
+
+**Resolution:**
+
+<Steps>
+  <Step title="Verify Keeper Address">
+    Check the keeper address configured in the module:
+
+    ```bash
+    cast call <module-address> "keeper()" --rpc-url <rpc-url>
+    ```
+  </Step>
+
+  <Step title="Verify Sender Address">
+    Ensure your private key corresponds to the keeper address:
+
+    ```bash
+    cast wallet address --private-key <private-key>
+    ```
+  </Step>
+
+  <Step title="Update Configuration">
+    If using the wrong private key, update the `PRIVATE_KEY` environment variable or use the correct key.
+  </Step>
+</Steps>
+
+<Warning>
+  The keeper address is immutable. If you need to change it, you must redeploy the module with a new keeper address.
+</Warning>
+
+### BuyAmountTooSmall Error
+
+**Symptom:**
+```
+Error: Transaction reverted with custom error 'BuyAmountTooSmall()'
+```
+
+**Cause:**
+One or more tokens in the drip call have a `buyAmount` less than the module's `minOut` threshold.
+
+**Resolution:**
+
+<Steps>
+  <Step title="Check minOut Threshold">
+    Query the module's minimum output requirement:
+
+    ```bash
+    cast call <module-address> "minOut()" --rpc-url <rpc-url>
+    ```
+  </Step>
+
+  <Step title="Filter Tokens">
+    Ensure the keeper is properly filtering tokens. Check the console output for "Total tokens after filtering by minOut".
+  </Step>
+
+  <Step title="Adjust Slippage">
+    If quotes are borderline, increase `--buy-amount-slippage-bps`:
+
+    ```bash
+    --buy-amount-slippage-bps 150  # Increased from default 100
+    ```
+
+    <Warning>
+      Higher slippage increases the chance of unfavorable trades. Use cautiously.
+    </Warning>
+  </Step>
+
+  <Step title="Consider Redeployment">
+    If the `minOut` value is too high for your use case, redeploy the module with a lower threshold.
+  </Step>
+</Steps>
+
+See ts/drip/getTokensToSwap.ts:89 for the minOut filtering logic.
+
+### Gas Estimation Failed
+
+**Symptom:**
+```
+Error estimating gas. Please review the transaction parameters
+```
+
+**Cause:**
+The transaction will revert, preventing accurate gas estimation. Common reasons:
+- Module not enabled on the target Safe
+- Insufficient token balances
+- Invalid order parameters
+- Network connectivity issues
+
+**Resolution:**
+
+<Accordion title="Verify Module Enabled">
+  Check if the module is enabled on the target Safe:
+
+  ```bash
+  # Get list of enabled modules
+  cast call <safe-address> "getModules()" --rpc-url <rpc-url>
+  ```
+
+  If the module address is not in the list, enable it following the [module operations guide](/operations/module-operations#enabling-the-module).
+</Accordion>
+
+<Accordion title="Check Token Balances">
+  Verify the Settlement contract has sufficient token balances:
+
+  ```bash
+  cast call <token-address> \
+    "balanceOf(address)" \
+    <settlement-address> \
+    --rpc-url <rpc-url>
+  ```
+</Accordion>
+
+<Accordion title="Test RPC Connection">
+  Ensure your RPC endpoint is responsive:
+
+  ```bash
+  cast block latest --rpc-url <rpc-url>
+  ```
+
+  If this fails, try an alternative RPC provider.
+</Accordion>
+
+<Accordion title="Simulate Transaction">
+  Use `cast call` to simulate the transaction and see the revert reason:
+
+  ```bash
+  cast call <module-address> \
+    "drip(address[],(address,uint256,uint256)[])" \
+    "[]" "[]" \
+    --from <keeper-address> \
+    --rpc-url <rpc-url>
+  ```
+</Accordion>
+
+### Order Posting Failed
+
+**Symptom:**
+```
+Failed posting orders:
+```
+
+Followed by rejection reasons from the OrderBook API.
+
+**Cause:**
+The CoW OrderBook API rejected one or more orders. Common reasons:
+- Insufficient liquidity
+- Token not supported
+- Invalid order parameters
+- Rate limiting
+
+**Resolution:**
+
+<Steps>
+  <Step title="Review Rejection Reasons">
+    Check the console output for specific error messages from the OrderBook API.
+  </Step>
+
+  <Step title="Verify Token Support">
+    Ensure the token is traded on CoW Protocol:
+    - Check the CoW Explorer for recent trades of the token
+    - Verify the token is not on a blocklist
+  </Step>
+
+  <Step title="Check Liquidity">
+    Low liquidity tokens may not get quotes. The keeper automatically filters these, but borderline cases may still reach the posting stage.
+  </Step>
+
+  <Step title="Monitor Rate Limits">
+    If posting many orders, you may hit API rate limits. The keeper processes up to `--max-orders` per batch (default: 250).
+  </Step>
+</Steps>
+
+<Tip>
+  The keeper continues to execute drip for successfully posted orders even if some orders fail. Check "Successfully posted orders" in the output.
+</Tip>
+
+See ts/drip/postOrders.ts:1 for the order posting implementation.
+
+### Transaction Nonce Issues
+
+**Symptom:**
+```
+Error: nonce has already been used
+```
+or
+```
+Error: replacement transaction underpriced
+```
+
+**Cause:**
+- Multiple keeper instances running simultaneously
+- Previous transaction still pending
+- Network congestion
+
+**Resolution:**
+
+<Steps>
+  <Step title="Check for Multiple Instances">
+    Ensure only one keeper instance is running:
+
+    ```bash
+    # On Linux/Mac
+    ps aux | grep "ts-node index.ts"
+    ```
+  </Step>
+
+  <Step title="Check Pending Transactions">
+    Query pending transactions for the keeper address:
+
+    ```bash
+    cast tx <transaction-hash> --rpc-url <rpc-url>
+    ```
+  </Step>
+
+  <Step title="Wait or Replace">
+    Either:
+    - Wait for the pending transaction to complete
+    - Send a replacement transaction with higher gas price
+  </Step>
+</Steps>
+
+See ts/drip/drip.ts:56 for nonce handling.
+
+## Token Discovery Issues
+
+### No Tokens Found
+
+**Symptom:**
+```
+Tokens to swap: []
+```
+
+**Cause:**
+- No tokens in Settlement contract
+- Explorer API issues
+- All tokens below `minOut` threshold
+
+**Resolution:**
+
+<Steps>
+  <Step title="Verify Token Balances">
+    Manually check if the Settlement contract holds any tokens:
+
+    ```bash
+    # Use a block explorer to view the Settlement contract's token holdings
+    ```
+  </Step>
+
+  <Step title="Switch Token Discovery Strategy">
+    If using `--token-list-strategy explorer`, switch to `chain`:
+
+    ```bash
+    --token-list-strategy chain --lookback-range 1000
+    ```
+
+    This uses on-chain Trade events instead of explorer APIs.
+  </Step>
+
+  <Step title="Increase Lookback Range">
+    If using chain strategy, increase the lookback range:
+
+    ```bash
+    --lookback-range 5000
+    ```
+
+    <Warning>
+      Very large lookback ranges can cause slow performance and RPC timeouts.
+    </Warning>
+  </Step>
+
+  <Step title="Check minOut Threshold">
+    If tokens exist but don't appear, they may be filtered by `minOut`. Check the filtering logs:
+    ```
+    Total tokens pre-filter: X
+    Total tokens after filtering by quotes api: Y
+    Total tokens after filtering by minOut: Z
+    ```
+  </Step>
+</Steps>
+
+### Explorer API Timeouts
+
+**Symptom:**
+```
+Error fetching token list from explorer API
+```
+
+**Resolution:**
+
+Switch to on-chain token discovery:
+
+```bash
+--token-list-strategy chain
+```
+
+This strategy is more reliable but requires more RPC calls.
+
+## Native Token Wrapping Issues
+
+### Native Tokens Not Wrapped
+
+**Symptom:**
+Native tokens remain unwrapped in the Settlement contract.
+
+**Cause:**
+Native token balance is below `minOut` threshold.
+
+**Resolution:**
+
+<Steps>
+  <Step title="Check Native Balance">
+    Query the Settlement contract's native token balance:
+
+    ```bash
+    cast balance <settlement-address> --rpc-url <rpc-url>
+    ```
+  </Step>
+
+  <Step title="Check minOut">
+    Compare the balance to the module's `minOut`:
+
+    ```bash
+    cast call <module-address> "minOut()" --rpc-url <rpc-url>
+    ```
+  </Step>
+
+  <Step title="Wait for Accumulation">
+    If balance is below threshold, wait for more fees to accumulate.
+  </Step>
+
+  <Step title="Manual Drip">
+    Force a drip operation even without token swaps:
+
+    ```bash
+    cast send <module-address> \
+      "drip(address[],(address,uint256,uint256)[])" \
+      "[]" "[]" \
+      --private-key <keeper-private-key> \
+      --rpc-url <rpc-url>
+    ```
+
+    This will wrap and transfer native tokens if balance ≥ `minOut`.
+  </Step>
+</Steps>
+
+See src/COWFeeModule.sol:95 for native token wrapping logic.
+
+## Performance Issues
+
+### Slow Execution
+
+**Cause:**
+- Large number of tokens to process
+- Slow RPC endpoint
+- High network congestion
+
+**Resolution:**
+
+<Accordion title="Optimize RPC Provider">
+  Use a premium RPC provider with higher rate limits and better performance:
+  - Alchemy
+  - Infura
+  - QuickNode
+  - Self-hosted node
+</Accordion>
+
+<Accordion title="Reduce Lookback Range">
+  If using `--token-list-strategy chain`, reduce the lookback range:
+
+  ```bash
+  --lookback-range 500  # Default is 1000
+  ```
+</Accordion>
+
+<Accordion title="Limit Max Orders">
+  Process fewer orders per batch:
+
+  ```bash
+  --max-orders 100  # Default is 250
+  ```
+</Accordion>
+
+### High Gas Costs
+
+**Symptom:**
+Drip transactions consume excessive gas.
+
+**Cause:**
+- Too many tokens in a single drip call
+- Network gas prices elevated
+
+**Resolution:**
+
+<Steps>
+  <Step title="Reduce Batch Size">
+    Lower the number of orders per drip:
+
+    ```bash
+    --max-orders 50
+    ```
+  </Step>
+
+  <Step title="Monitor Gas Prices">
+    Check current network gas prices:
+
+    ```bash
+    cast gas-price --rpc-url <rpc-url>
+    ```
+
+    Consider waiting for lower gas periods.
+  </Step>
+
+  <Step title="Set Gas Limits">
+    The keeper automatically estimates gas, but you can monitor the estimates in the console output:
+    ```
+    Estimated gas limit: XXXXX
+    ```
+  </Step>
+</Steps>
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+1. Check the [monitoring guide](/operations/monitoring) for diagnostic tools
+2. Review the contract source code at src/COWFeeModule.sol
+3. Examine keeper logs for detailed error messages
+4. Test operations on a testnet (sepolia) before mainnet
+
+<Tip>
+  Enable verbose logging by reviewing the console output from the keeper. All major operations are logged with relevant details.
+</Tip>

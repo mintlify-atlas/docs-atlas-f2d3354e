@@ -1,0 +1,232 @@
+---
+title: 'COWFeeModule Contract'
+description: 'Complete reference for the COWFeeModule smart contract'
+---
+
+## Overview
+
+The `COWFeeModule` is a Safe module that automates fee collection and token swapping through the CoW Protocol (Gnosis Protocol v2). It enables a designated keeper to approve tokens, create swap orders, and manage token balances on behalf of a Safe wallet.
+
+<Note>
+  This contract is designed to work as a Safe module and requires the Safe to enable it before use.
+</Note>
+
+## Contract Details
+
+**License:** GPL-3.0-or-later  
+**Solidity Version:** ^0.8  
+**Source:** `src/COWFeeModule.sol`
+
+## Immutable Variables
+
+The contract uses immutable variables for gas-efficient storage of configuration parameters:
+
+<ParamField path="targetSafe" type="ISafe" required>
+  The Safe wallet that this module will interact with. All transactions are executed through this Safe.
+</ParamField>
+
+<ParamField path="wrappedNativeToken" type="address" required>
+  Address of the wrapped native token (e.g., WETH on Ethereum). This is always used as the buy token in swaps.
+</ParamField>
+
+<ParamField path="keeper" type="address" required>
+  The authorized address that can call privileged functions (`approve`, `revoke`, `drip`). Only this address can trigger module operations.
+</ParamField>
+
+<ParamField path="domainSeparator" type="bytes32" required>
+  EIP-712 domain separator for the CoW Protocol settlement contract. Used for order signature validation.
+</ParamField>
+
+<ParamField path="appData" type="bytes32" required>
+  Application-specific data attached to all orders created by this module. Can be used for order tracking and identification.
+</ParamField>
+
+<ParamField path="settlement" type="IGPv2Settlement" required>
+  The CoW Protocol settlement contract interface. All swap orders are submitted to this contract.
+</ParamField>
+
+<ParamField path="vaultRelayer" type="address" required>
+  Address of the vault relayer contract that handles token transfers for CoW Protocol. Automatically retrieved from the settlement contract during initialization.
+</ParamField>
+
+<ParamField path="receiver" type="address" required>
+  The address that will receive the wrapped native tokens from all swaps.
+</ParamField>
+
+<ParamField path="minOut" type="uint256" required>
+  Minimum amount of buy tokens required for a swap to be processed. Swaps with lower buy amounts will revert.
+</ParamField>
+
+## Custom Errors
+
+The contract defines two custom errors for gas-efficient error handling:
+
+### OnlyKeeper
+
+```solidity
+error OnlyKeeper();
+```
+
+Reverts when a non-keeper address attempts to call a keeper-only function.
+
+### BuyAmountTooSmall
+
+```solidity
+error BuyAmountTooSmall();
+```
+
+Reverts when a swap's buy amount is below the configured `minOut` threshold.
+
+## Structs
+
+### Revocation
+
+Used for revoking token approvals to specific spenders.
+
+```solidity
+struct Revocation {
+    address token;
+    address spender;
+}
+```
+
+<ParamField path="token" type="address">
+  The ERC20 token contract address
+</ParamField>
+
+<ParamField path="spender" type="address">
+  The address whose approval should be revoked
+</ParamField>
+
+### SwapToken
+
+Defines parameters for a token swap order.
+
+```solidity
+struct SwapToken {
+    address token;
+    uint256 sellAmount;
+    uint256 buyAmount;
+}
+```
+
+<ParamField path="token" type="address">
+  The ERC20 token to sell
+</ParamField>
+
+<ParamField path="sellAmount" type="uint256">
+  Amount of tokens to sell
+</ParamField>
+
+<ParamField path="buyAmount" type="uint256">
+  Minimum amount of wrapped native tokens to buy. Must be >= `minOut`.
+</ParamField>
+
+## Modifiers
+
+### onlyKeeper
+
+```solidity
+modifier onlyKeeper() {
+    if (msg.sender != keeper) {
+        revert OnlyKeeper();
+    }
+    _;
+}
+```
+
+Restricts function access to the configured keeper address only.
+
+<Warning>
+  All state-changing functions in this contract are protected by the `onlyKeeper` modifier. Ensure the keeper address is properly secured.
+</Warning>
+
+## Constructor
+
+```solidity
+constructor(
+    address _settlement,
+    address _targetSafe,
+    address _wrappedNativeToken,
+    address _keeper,
+    bytes32 _appData,
+    address _receiver,
+    uint256 _minOut
+)
+```
+
+Initializes the COWFeeModule with all required parameters.
+
+<ParamField path="_settlement" type="address" required>
+  Address of the CoW Protocol settlement contract
+</ParamField>
+
+<ParamField path="_targetSafe" type="address" required>
+  Address of the Safe wallet this module will control
+</ParamField>
+
+<ParamField path="_wrappedNativeToken" type="address" required>
+  Address of the wrapped native token contract (e.g., WETH)
+</ParamField>
+
+<ParamField path="_keeper" type="address" required>
+  Address authorized to execute module functions
+</ParamField>
+
+<ParamField path="_appData" type="bytes32" required>
+  Application data to attach to all orders
+</ParamField>
+
+<ParamField path="_receiver" type="address" required>
+  Address to receive swapped tokens
+</ParamField>
+
+<ParamField path="_minOut" type="uint256" required>
+  Minimum buy amount threshold for swaps
+</ParamField>
+
+<Note>
+  The constructor automatically fetches the `vaultRelayer` and `domainSeparator` from the settlement contract.
+</Note>
+
+## Key Features
+
+<Accordion title="Automated Token Management">
+  The module handles token approvals, balance wrapping, and transfer operations automatically. It can wrap native tokens (ETH) into wrapped tokens (WETH) and manage approvals to the CoW Protocol vault relayer.
+</Accordion>
+
+<Accordion title="Batch Operations">
+  Multiple tokens can be approved and swapped in a single transaction, reducing gas costs and simplifying keeper operations.
+</Accordion>
+
+<Accordion title="Pre-Signature Orders">
+  Instead of requiring explicit signatures, the module uses CoW Protocol's pre-signature mechanism. Orders are committed on-chain by the Safe through the module, allowing off-chain solvers to fill them.
+</Accordion>
+
+<Accordion title="Safe Integration">
+  All operations are executed through the Safe's `execTransactionFromModuleReturnData` function, ensuring the Safe retains full control and security guarantees.
+</Accordion>
+
+## Security Considerations
+
+<Warning>
+  **Keeper Security**: The keeper address has significant control over the module. Compromise of the keeper could lead to:
+  - Unauthorized token approvals
+  - Creation of unfavorable swap orders
+  - Revocation of necessary approvals
+  
+  Use a secure, dedicated address or multi-sig for the keeper role.
+</Warning>
+
+<Warning>
+  **Module Permissions**: Once enabled on a Safe, this module can execute arbitrary calls to the settlement contract. Ensure you trust the deployed module contract before enabling it.
+</Warning>
+
+<Note>
+  The module includes a `minOut` parameter to prevent swaps with insufficient buy amounts, providing protection against unfavorable trades.
+</Note>
+
+## Related Contracts
+
+- [Interfaces Reference](/contracts/interfaces) - Detailed interface documentation
+- [Functions Reference](/contracts/functions) - Comprehensive function documentation

@@ -1,0 +1,156 @@
+---
+title: "nextValidTo"
+description: "Calculate the next order expiration timestamp"
+---
+
+## Function Signature
+
+```solidity
+function nextValidTo() public view returns (uint32)
+```
+
+## Description
+
+Calculates the deterministic `validTo` timestamp that will be used for orders created by the module. This function returns a timestamp aligned to hourly boundaries, specifically 2 hours into the future from the current hour's start.
+
+<Note>
+This function is deterministic and view-only, allowing scripts to predict order `validTo` values before executing the `drip` transaction onchain.
+</Note>
+
+## Returns
+
+<ResponseField name="validTo" type="uint32">
+  The Unix timestamp (in seconds) when orders will expire. This value is calculated as the start of the current hour plus 2 hours.
+</ResponseField>
+
+## Behavior
+
+The function performs the following calculation:
+
+1. Takes the current `block.timestamp`
+2. Calculates the remainder when divided by 1 hour (3600 seconds)
+3. Subtracts the remainder to get the start of the current hour
+4. Adds 2 hours (7200 seconds) to get the expiration timestamp
+5. Returns the result as a `uint32`
+
+### Formula
+
+```solidity
+remainder = block.timestamp % 1 hours
+validTo = (block.timestamp - remainder) + 2 hours
+```
+
+## Implementation Details
+
+From `/home/daytona/workspace/source/src/COWFeeModule.sol:170`:
+
+```solidity
+function nextValidTo() public view returns (uint32) {
+    uint256 remainder = block.timestamp % 1 hours;
+    return uint32((block.timestamp - remainder) + 2 hours);
+}
+```
+
+## Deterministic Nature
+
+<Note>
+The deterministic nature of this function is critical for off-chain order creation. Scripts can:
+- Calculate the exact `validTo` timestamp before the transaction is mined
+- Submit orders to CoW Protocol's API with matching `validTo` values
+- Ensure presignatures match between off-chain and on-chain orders
+</Note>
+
+## Example Calculations
+
+### Example 1: Mid-Hour Timestamp
+```solidity
+// Current time: 2026-03-13 14:30:00 UTC (timestamp: 1773684600)
+// remainder = 1773684600 % 3600 = 1800 (30 minutes)
+// hour_start = 1773684600 - 1800 = 1773682800 (14:00:00)
+// validTo = 1773682800 + 7200 = 1773690000 (16:00:00)
+
+feeModule.nextValidTo(); // Returns: 1773690000
+```
+
+### Example 2: Start of Hour
+```solidity
+// Current time: 2026-03-13 15:00:00 UTC (timestamp: 1773686400)
+// remainder = 1773686400 % 3600 = 0
+// hour_start = 1773686400 - 0 = 1773686400 (15:00:00)
+// validTo = 1773686400 + 7200 = 1773693600 (17:00:00)
+
+feeModule.nextValidTo(); // Returns: 1773693600
+```
+
+### Example 3: Near End of Hour
+```solidity
+// Current time: 2026-03-13 15:59:30 UTC (timestamp: 1773690570)
+// remainder = 1773690570 % 3600 = 3570 (59 minutes, 30 seconds)
+// hour_start = 1773690570 - 3570 = 1773687000 (15:00:00)
+// validTo = 1773687000 + 7200 = 1773694200 (17:00:00)
+
+feeModule.nextValidTo(); // Returns: 1773694200
+```
+
+## Usage in Order Creation
+
+The `nextValidTo()` function is automatically called within the `drip()` function when creating orders:
+
+```solidity
+GPv2Order.Data memory order = GPv2Order.Data({
+    sellToken: IERC20(address(0)),
+    buyToken: wrappedNativeTokenContract,
+    receiver: receiver,
+    sellAmount: 0,
+    buyAmount: 0,
+    validTo: nextValidTo(),  // Called here
+    appData: appData,
+    feeAmount: 0,
+    kind: GPv2Order.KIND_SELL,
+    partiallyFillable: true,
+    sellTokenBalance: GPv2Order.BALANCE_ERC20,
+    buyTokenBalance: GPv2Order.BALANCE_ERC20
+});
+```
+
+## Off-Chain Integration Example
+
+```javascript
+// Calculate nextValidTo off-chain (JavaScript/TypeScript)
+function calculateNextValidTo(currentTimestamp) {
+    const ONE_HOUR = 3600;
+    const TWO_HOURS = 7200;
+    
+    const remainder = currentTimestamp % ONE_HOUR;
+    const hourStart = currentTimestamp - remainder;
+    const validTo = hourStart + TWO_HOURS;
+    
+    return validTo;
+}
+
+// Use in order submission
+const now = Math.floor(Date.now() / 1000);
+const validTo = calculateNextValidTo(now);
+
+// Submit order to CoW Protocol API with matching validTo
+const order = {
+    sellToken: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    buyToken: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    sellAmount: "1000000000000000000000",
+    buyAmount: "500000000000000000",
+    validTo: validTo,
+    // ... other order parameters
+};
+```
+
+## Why 2-Hour Expiration?
+
+Orders are given a 2-hour expiration window from the start of the current hour to:
+- Provide sufficient time for order matching and settlement
+- Align with CoW Protocol's batch auction timing
+- Reduce the frequency of order recreation needed
+- Maintain price validity while preventing stale orders
+
+## Related Functions
+
+- [`drip()`](/api/drip) - Uses `nextValidTo()` to set order expiration times

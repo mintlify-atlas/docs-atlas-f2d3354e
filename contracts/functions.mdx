@@ -1,0 +1,669 @@
+---
+title: 'Functions Reference'
+description: 'Detailed documentation of all functions in COWFeeModule'
+---
+
+## Overview
+
+This page provides comprehensive documentation for all public, external, and internal functions in the COWFeeModule contract and related libraries.
+
+## Public Functions
+
+### approve
+
+```solidity
+function approve(address[] calldata _tokens) external onlyKeeper
+```
+
+**Source:** `COWFeeModule.sol:64-69`
+
+Approves the vault relayer to spend the specified tokens on behalf of the settlement contract. This must be called before tokens can be used in swap orders.
+
+<ParamField path="_tokens" type="address[]" required>
+  Array of ERC20 token addresses to approve
+</ParamField>
+
+**Access:** Only callable by the keeper address
+
+**Implementation Details:**
+- Creates an `InteractionData` array with approve calls for each token
+- Uses `type(uint256).max` for unlimited approval
+- Executes all approvals atomically through the settlement contract
+
+**Example:**
+```solidity
+address[] memory tokens = new address[](2);
+tokens[0] = 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI
+tokens[1] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
+
+cowFeeModule.approve(tokens);
+```
+
+<Note>
+  Approvals are persistent and only need to be called once per token unless explicitly revoked.
+</Note>
+
+---
+
+### revoke
+
+```solidity
+function revoke(Revocation[] calldata _revocations) external onlyKeeper
+```
+
+**Source:** `COWFeeModule.sol:72-88`
+
+Revokes token approvals for specified spenders. Sets allowance to zero for each token-spender pair.
+
+<ParamField path="_revocations" type="Revocation[]" required>
+  Array of revocation parameters specifying which tokens and spenders to revoke
+</ParamField>
+
+**Access:** Only callable by the keeper address
+
+**Revocation Struct:**
+```solidity
+struct Revocation {
+    address token;   // Token to revoke approval for
+    address spender; // Address to revoke approval from
+}
+```
+
+**Example:**
+```solidity
+COWFeeModule.Revocation[] memory revocations = new COWFeeModule.Revocation[](1);
+revocations[0] = COWFeeModule.Revocation({
+    token: 0x6B175474E89094C44Da98b954EedeAC495271d0F,  // DAI
+    spender: vaultRelayerAddress
+});
+
+cowFeeModule.revoke(revocations);
+```
+
+<Warning>
+  Revoking approvals for tokens with active orders will prevent those orders from being filled until re-approved.
+</Warning>
+
+---
+
+### drip
+
+```solidity
+function drip(
+    address[] calldata _approveTokens,
+    SwapToken[] calldata _swapTokens
+) external onlyKeeper
+```
+
+**Source:** `COWFeeModule.sol:92-166`
+
+The main function that creates swap orders for fee tokens. It handles token approvals, order pre-signatures, native token wrapping, and token transfers in a single transaction.
+
+<ParamField path="_approveTokens" type="address[]" required>
+  Tokens to approve before creating orders
+</ParamField>
+
+<ParamField path="_swapTokens" type="SwapToken[]" required>
+  Array of tokens to swap with their sell/buy amounts
+</ParamField>
+
+**SwapToken Struct:**
+```solidity
+struct SwapToken {
+    address token;        // Token to sell
+    uint256 sellAmount;   // Amount to sell
+    uint256 buyAmount;    // Minimum amount of wrapped native token to receive
+}
+```
+
+**Access:** Only callable by the keeper address
+
+**Reverts:** `BuyAmountTooSmall` if any swap's `buyAmount < minOut`
+
+**Functionality:**
+
+<Accordion title="1. Native Token Handling">
+  - Checks the settlement contract's native token balance
+  - If balance >= `minOut`, wraps native tokens into wrapped tokens
+  - Adds wrapped tokens to the balance available for transfer
+</Accordion>
+
+<Accordion title="2. Wrapped Token Balance Check">
+  - Queries wrapped native token balance of settlement contract
+  - Combines with newly wrapped tokens (if any)
+  - If total >= `minOut`, schedules transfer to receiver
+</Accordion>
+
+<Accordion title="3. Token Approvals">
+  - Creates approval interactions for all tokens in `_approveTokens`
+  - Approves `type(uint256).max` to vault relayer
+</Accordion>
+
+<Accordion title="4. Order Creation">
+  For each token in `_swapTokens`:
+  - Creates a GPv2Order with the token as sell token
+  - Sets wrapped native token as buy token
+  - Validates `buyAmount >= minOut`
+  - Computes order hash and pre-signature
+  - Creates interaction to set pre-signature on settlement contract
+</Accordion>
+
+<Accordion title="5. Batch Execution">
+  All interactions are executed atomically:
+  1. Token approvals (if any)
+  2. Pre-signature commitments for all orders
+  3. Native token wrapping (if needed)
+  4. Wrapped token transfer to receiver (if needed)
+</Accordion>
+
+**Example:**
+```solidity
+// Approve new tokens
+address[] memory approveTokens = new address[](1);
+approveTokens[0] = daiAddress;
+
+// Create swap orders
+COWFeeModule.SwapToken[] memory swaps = new COWFeeModule.SwapToken[](2);
+swaps[0] = COWFeeModule.SwapToken({
+    token: daiAddress,
+    sellAmount: 1000e18,  // 1000 DAI
+    buyAmount: 0.5e18     // Minimum 0.5 WETH
+});
+swaps[1] = COWFeeModule.SwapToken({
+    token: usdcAddress,
+    sellAmount: 1000e6,   // 1000 USDC
+    buyAmount: 0.5e18     // Minimum 0.5 WETH
+});
+
+cowFeeModule.drip(approveTokens, swaps);
+```
+
+<Note>
+  All created orders have the same `validTo` timestamp, calculated by `nextValidTo()`. This ensures deterministic order UIDs.
+</Note>
+
+---
+
+### nextValidTo
+
+```solidity
+function nextValidTo() public view returns (uint32)
+```
+
+**Source:** `COWFeeModule.sol:170-173`
+
+Calculates the expiration timestamp for orders created by the module. Returns a deterministic value based on the current block timestamp.
+
+**Returns:** `uint32` - Unix timestamp when orders will expire
+
+**Algorithm:**
+1. Calculate remainder: `block.timestamp % 1 hour`
+2. Round down to the hour: `block.timestamp - remainder`
+3. Add 2 hours for validity period
+
+**Examples:**
+```solidity
+// If current time is 14:30 (2:30 PM)
+// remainder = 30 minutes
+// rounded = 14:00
+// validTo = 16:00 (4:00 PM)
+
+// If current time is 09:45 (9:45 AM)
+// remainder = 45 minutes
+// rounded = 09:00
+// validTo = 11:00 (11:00 AM)
+```
+
+<Note>
+  The deterministic nature allows off-chain scripts to compute order UIDs before the `drip` function is called, enabling pre-submission of orders to the CoW Protocol API.
+</Note>
+
+---
+
+## Internal Functions
+
+### _approveInteractions
+
+```solidity
+function _approveInteractions(
+    address[] calldata _tokens,
+    IGPv2Settlement.InteractionData[] memory _interactions
+) internal view
+```
+
+**Source:** `COWFeeModule.sol:175-191`
+
+Populates an interaction array with token approval calls.
+
+<ParamField path="_tokens" type="address[]">
+  Tokens to create approval interactions for
+</ParamField>
+
+<ParamField path="_interactions" type="InteractionData[]">
+  Array to populate (must have sufficient length)
+</ParamField>
+
+**Implementation:**
+```solidity
+for (uint256 i = 0; i < _tokens.length;) {
+    address token = _tokens[i];
+    _interactions[i] = IGPv2Settlement.InteractionData({
+        to: token,
+        value: 0,
+        callData: abi.encodeCall(IERC20.approve, (vaultRelayer, type(uint256).max))
+    });
+    unchecked { ++i; }
+}
+```
+
+<Note>
+  Uses `unchecked` increment for gas optimization since array bounds are guaranteed.
+</Note>
+
+---
+
+### _execFromModule
+
+```solidity
+function _execFromModule(address _to, bytes memory _cd)
+    internal
+    returns (bytes memory)
+```
+
+**Source:** `COWFeeModule.sol:193-202`
+
+Executes a transaction from the module through the target Safe.
+
+<ParamField path="_to" type="address">
+  Target contract address
+</ParamField>
+
+<ParamField path="_cd" type="bytes">
+  Encoded call data
+</ParamField>
+
+**Returns:** `bytes` - Return data from the executed transaction
+
+**Reverts:** If the Safe transaction fails, reverts with the original error
+
+**Implementation Details:**
+- Calls Safe's `execTransactionFromModuleReturnData` with `Operation.Call`
+- Value is always 0 (native tokens sent via interaction value)
+- Uses inline assembly to preserve revert data
+
+```solidity
+(bool success, bytes memory returnData) =
+    targetSafe.execTransactionFromModuleReturnData(_to, 0, _cd, ISafe.Operation.Call);
+if (!success) {
+    assembly ("memory-safe") {
+        revert(add(returnData, 0x20), mload(returnData))
+    }
+}
+```
+
+---
+
+### _execInteractions
+
+```solidity
+function _execInteractions(
+    IGPv2Settlement.InteractionData[] memory _interactions
+) internal
+```
+
+**Source:** `COWFeeModule.sol:204-212`
+
+Executes interactions through the settlement contract via the Safe module.
+
+<ParamField path="_interactions" type="InteractionData[]">
+  Array of interactions to execute
+</ParamField>
+
+**Implementation:**
+```solidity
+address[] memory tokens = new address[](0);
+uint256[] memory clearingPrices = new uint256[](0);
+IGPv2Settlement.TradeData[] memory trades = new IGPv2Settlement.TradeData[](0);
+IGPv2Settlement.InteractionData[][3] memory interactions = [
+    new IGPv2Settlement.InteractionData[](0),  // Pre-interactions
+    _interactions,                              // Intra-interactions
+    new IGPv2Settlement.InteractionData[](0)   // Post-interactions
+];
+bytes memory cd = abi.encodeCall(IGPv2Settlement.settle, (tokens, clearingPrices, trades, interactions));
+_execFromModule(address(settlement), cd);
+```
+
+<Note>
+  This function uses the settlement contract's `settle` function with only interactions (no actual trades), allowing the module to leverage the settlement contract's interaction execution framework.
+</Note>
+
+---
+
+### _computePreSignature
+
+```solidity
+function _computePreSignature(GPv2Order.Data memory order)
+    internal
+    view
+    returns (bytes memory)
+```
+
+**Source:** `COWFeeModule.sol:214-217`
+
+Computes the pre-signature data for a CoW Protocol order.
+
+<ParamField path="order" type="GPv2Order.Data">
+  Order parameters to compute signature for
+</ParamField>
+
+**Returns:** `bytes` - Pre-signature data (56 bytes: orderDigest + owner + validTo)
+
+**Implementation:**
+```solidity
+bytes32 orderDigest = GPv2Order.hash(order, domainSeparator);
+return abi.encodePacked(orderDigest, address(settlement), order.validTo);
+```
+
+**Pre-signature Format:**
+- Bytes 0-31: Order digest (EIP-712 hash)
+- Bytes 32-51: Owner address (settlement contract)
+- Bytes 52-55: Valid to timestamp
+
+<Note>
+  The owner is set to the settlement contract address because that's where the tokens reside and where the pre-signature is stored.
+</Note>
+
+---
+
+## GPv2Order Library
+
+**Source:** `src/libraries/GPv2Order.sol`
+
+Utility library for working with CoW Protocol orders.
+
+### Constants
+
+```solidity
+bytes32 internal constant TYPE_HASH = 
+    hex"d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489";
+
+bytes32 internal constant KIND_SELL = 
+    hex"f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775";
+
+bytes32 internal constant KIND_BUY = 
+    hex"6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc";
+
+bytes32 internal constant BALANCE_ERC20 = 
+    hex"5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9";
+
+bytes32 internal constant BALANCE_EXTERNAL = 
+    hex"abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632";
+
+bytes32 internal constant BALANCE_INTERNAL = 
+    hex"4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce";
+
+address internal constant RECEIVER_SAME_AS_OWNER = address(0);
+
+uint256 internal constant UID_LENGTH = 56;
+```
+
+<Note>
+  COWFeeModule uses `KIND_SELL`, `BALANCE_ERC20` for both sell and buy tokens.
+</Note>
+
+---
+
+### Data Struct
+
+```solidity
+struct Data {
+    IERC20 sellToken;
+    IERC20 buyToken;
+    address receiver;
+    uint256 sellAmount;
+    uint256 buyAmount;
+    uint32 validTo;
+    bytes32 appData;
+    uint256 feeAmount;
+    bytes32 kind;
+    bool partiallyFillable;
+    bytes32 sellTokenBalance;
+    bytes32 buyTokenBalance;
+}
+```
+
+Complete order data structure for CoW Protocol.
+
+<ParamField path="sellToken" type="IERC20">
+  Token to sell
+</ParamField>
+
+<ParamField path="buyToken" type="IERC20">
+  Token to buy
+</ParamField>
+
+<ParamField path="receiver" type="address">
+  Recipient of buy tokens (address(0) for order owner)
+</ParamField>
+
+<ParamField path="sellAmount" type="uint256">
+  Amount of sell tokens
+</ParamField>
+
+<ParamField path="buyAmount" type="uint256">
+  For sell orders: minimum buy amount. For buy orders: exact buy amount.
+</ParamField>
+
+<ParamField path="validTo" type="uint32">
+  Unix timestamp when order expires
+</ParamField>
+
+<ParamField path="appData" type="bytes32">
+  Application-specific data
+</ParamField>
+
+<ParamField path="feeAmount" type="uint256">
+  Fee amount in sell token (0 for module orders)
+</ParamField>
+
+<ParamField path="kind" type="bytes32">
+  KIND_SELL or KIND_BUY
+</ParamField>
+
+<ParamField path="partiallyFillable" type="bool">
+  Whether order can be partially filled
+</ParamField>
+
+<ParamField path="sellTokenBalance" type="bytes32">
+  Source of sell tokens (BALANCE_ERC20/EXTERNAL/INTERNAL)
+</ParamField>
+
+<ParamField path="buyTokenBalance" type="bytes32">
+  Destination of buy tokens (BALANCE_ERC20/EXTERNAL/INTERNAL)
+</ParamField>
+
+---
+
+### hash
+
+```solidity
+function hash(Data memory order, bytes32 domainSeparator)
+    internal
+    pure
+    returns (bytes32 orderDigest)
+```
+
+**Source:** `GPv2Order.sol:124-153`
+
+Computes the EIP-712 signing hash for an order.
+
+<ParamField path="order" type="Data">
+  Order to hash
+</ParamField>
+
+<ParamField path="domainSeparator" type="bytes32">
+  EIP-712 domain separator
+</ParamField>
+
+**Returns:** `bytes32` - EIP-712 order digest
+
+**Algorithm:**
+1. Compute struct hash using `TYPE_HASH` and order fields
+2. Compute signing hash: `keccak256("\x19\x01" || domainSeparator || structHash)`
+
+<Note>
+  Uses inline assembly for gas-efficient computation without additional memory allocations.
+</Note>
+
+---
+
+### actualReceiver
+
+```solidity
+function actualReceiver(Data memory order, address owner)
+    internal
+    pure
+    returns (address receiver)
+```
+
+**Source:** `GPv2Order.sol:111-117`
+
+Returns the actual receiver address for an order, resolving the special `address(0)` marker.
+
+<ParamField path="order" type="Data">
+  Order data
+</ParamField>
+
+<ParamField path="owner" type="address">
+  Order owner address
+</ParamField>
+
+**Returns:** `address` - Actual receiver (owner if order.receiver is address(0))
+
+---
+
+### packOrderUidParams
+
+```solidity
+function packOrderUidParams(
+    bytes memory orderUid,
+    bytes32 orderDigest,
+    address owner,
+    uint32 validTo
+) internal pure
+```
+
+**Source:** `GPv2Order.sol:166-198`
+
+Packs order UID parameters into a 56-byte buffer.
+
+<ParamField path="orderUid" type="bytes">
+  Buffer to pack into (must be 56 bytes)
+</ParamField>
+
+<ParamField path="orderDigest" type="bytes32">
+  Order digest
+</ParamField>
+
+<ParamField path="owner" type="address">
+  Order owner
+</ParamField>
+
+<ParamField path="validTo" type="uint32">
+  Expiration timestamp
+</ParamField>
+
+**Reverts:** If `orderUid.length != 56`
+
+---
+
+### extractOrderUidParams
+
+```solidity
+function extractOrderUidParams(bytes calldata orderUid)
+    internal
+    pure
+    returns (bytes32 orderDigest, address owner, uint32 validTo)
+```
+
+**Source:** `GPv2Order.sol:212-226`
+
+Extracts order parameters from a 56-byte order UID.
+
+<ParamField path="orderUid" type="bytes">
+  Order UID to extract from (must be 56 bytes)
+</ParamField>
+
+**Returns:**
+- `orderDigest` (bytes32) - Order digest
+- `owner` (address) - Order owner
+- `validTo` (uint32) - Expiration timestamp
+
+**Reverts:** If `orderUid.length != 56`
+
+---
+
+## Function Call Flow
+
+Here's how the main functions interact:
+
+<Accordion title="approve Flow">
+  1. `approve()` - Entry point (keeper only)
+  2. `_approveInteractions()` - Create interaction array
+  3. `_execInteractions()` - Execute via settlement
+  4. `_execFromModule()` - Execute via Safe
+  5. Safe executes settlement.settle() with interactions
+</Accordion>
+
+<Accordion title="revoke Flow">
+  1. `revoke()` - Entry point (keeper only)
+  2. Inline creation of revoke interactions
+  3. `_execInteractions()` - Execute via settlement
+  4. `_execFromModule()` - Execute via Safe
+  5. Safe executes settlement.settle() with interactions
+</Accordion>
+
+<Accordion title="drip Flow">
+  1. `drip()` - Entry point (keeper only)
+  2. Check native/wrapped token balances
+  3. `nextValidTo()` - Calculate order expiration
+  4. `_approveInteractions()` - Create approval interactions
+  5. Loop through swaps:
+     - Build GPv2Order.Data
+     - `GPv2Order.hash()` - Compute order digest
+     - `_computePreSignature()` - Build pre-signature
+     - Add setPreSignature interaction
+  6. Add wrap/transfer interactions if needed
+  7. `_execInteractions()` - Execute all interactions
+  8. `_execFromModule()` - Execute via Safe
+  9. Safe executes settlement.settle() with all interactions
+</Accordion>
+
+## Gas Optimization Techniques
+
+The contract implements several gas optimizations:
+
+<Accordion title="Unchecked Arithmetic">
+  Loop counters use `unchecked { ++i; }` since overflow is impossible with reasonable array sizes.
+</Accordion>
+
+<Accordion title="Immutable Variables">
+  All configuration parameters are immutable, reducing storage reads to a single PUSH operation.
+</Accordion>
+
+<Accordion title="Batch Operations">
+  Multiple operations (approvals, orders, wrapping) are combined into a single transaction, saving base transaction costs.
+</Accordion>
+
+<Accordion title="Memory-Safe Assembly">
+  Error propagation uses memory-safe assembly to avoid unnecessary data copies.
+</Accordion>
+
+<Accordion title="Calldata Parameters">
+  Function parameters use `calldata` instead of `memory` where possible to avoid memory allocation costs.
+</Accordion>
+
+## Related Documentation
+
+- [COWFeeModule Contract](/contracts/cowfeemodule) - Main contract overview
+- [Interfaces Reference](/contracts/interfaces) - Interface definitions

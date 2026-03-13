@@ -1,0 +1,446 @@
+---
+title: 'Monitoring'
+description: 'Monitor and track CoW Fee Module operations'
+---
+
+Effective monitoring ensures the CoW Fee Module operates correctly and helps identify issues before they impact operations.
+
+## Keeper Monitoring
+
+The keeper provides comprehensive console output for monitoring its operations.
+
+### Execution Logs
+
+When the keeper runs, it outputs detailed information about each phase:
+
+```
+Config options:
+ { network: 'mainnet', maxOrders: 250, ... }
+
+Wallet address: 0x...
+
+ETH to wrap: 0.5
+
+Tokens to swap:
+ [
+   {
+     symbol: 'USDC',
+     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+     balance: '1000.0',
+     buyAmount: '0.45',
+     needsApproval: true
+   },
+   ...
+ ]
+
+Total tokens pre-filter: 45
+Total tokens after filtering by quotes api: 32
+Total tokens after filtering by minOut: 15
+
+Successfully posted orders:
+ ['0xabc...', '0xdef...', ...]
+
+Drip transaction parameters:
+ {
+   from: '0x...',
+   to: '0x...',
+   maxFeePerGas: '25000000000',
+   maxPriorityFeePerGas: '1500000000',
+   value: '0',
+   nonce: 42
+ }
+
+Estimated gas limit: 2500000
+
+Fee collection for chain mainnet initiated (15 orders). 
+Expecting proceeds of 12.50 WETH!
+
+Follow the progress at https://etherscan.io/address/0x...
+```
+
+### Key Metrics to Monitor
+
+<Accordion title="Token Discovery">
+  Monitor the token filtering funnel:
+  
+  - **Total tokens pre-filter**: All tokens discovered
+  - **After filtering by quotes api**: Tokens with available liquidity
+  - **After filtering by minOut**: Tokens meeting minimum value threshold
+
+  **What to watch:**
+  - Large drop-off at quotes stage may indicate liquidity issues
+  - Zero tokens after minOut filter means no profitable swaps available
+  - Consistent zero tokens may indicate discovery issues
+
+  See ts/drip/getTokensToSwap.ts:66 for filtering implementation.
+</Accordion>
+
+<Accordion title="Order Success Rate">
+  Track the ratio of successfully posted orders to total orders:
+
+  ```
+  Successfully posted orders: ['0x...', ...]  # Count these
+  Failed posting orders: [...]                 # vs these
+  ```
+
+  **Target:** >95% success rate
+
+  **Action if low:**
+  - Review failed order reasons
+  - Check for token support issues
+  - Verify OrderBook API connectivity
+
+  See ts/drip/postOrders.ts:43 for order posting results.
+</Accordion>
+
+<Accordion title="Gas Prices">
+  Monitor transaction gas parameters:
+
+  ```
+  maxFeePerGas: '25000000000'          # Maximum willing to pay
+  maxPriorityFeePerGas: '1500000000'   # Miner tip
+  Estimated gas limit: 2500000          # Gas units needed
+  ```
+
+  **What to watch:**
+  - Unusually high maxFeePerGas during network congestion
+  - Failed transactions due to gas price too low
+  - Increasing gas limits may indicate inefficient batching
+
+  See ts/drip/drip.ts:59 for gas estimation.
+</Accordion>
+
+<Accordion title="Expected Proceeds">
+  The keeper calculates expected WETH proceeds:
+
+  ```
+  Expecting proceeds of 12.50 WETH!
+  ```
+
+  This includes:
+  - Sum of all buyAmounts from token swaps
+  - Native ETH to be wrapped
+
+  **What to watch:**
+  - Declining proceeds over time may indicate fewer trading fees
+  - Compare to actual received amounts to detect slippage issues
+
+  See ts/drip/dripItAll.ts:70 for calculation.
+</Accordion>
+
+## On-Chain Monitoring
+
+### Module State
+
+Regularly verify the module's configuration remains correct:
+
+```bash
+# Check keeper address
+cast call <module-address> "keeper()" --rpc-url <rpc-url>
+
+# Check target safe
+cast call <module-address> "targetSafe()" --rpc-url <rpc-url>
+
+# Check wrapped native token
+cast call <module-address> "wrappedNativeToken()" --rpc-url <rpc-url>
+
+# Check receiver address
+cast call <module-address> "receiver()" --rpc-url <rpc-url>
+
+# Check minimum output threshold
+cast call <module-address> "minOut()" --rpc-url <rpc-url>
+
+# Check app data hash
+cast call <module-address> "appData()" --rpc-url <rpc-url>
+```
+
+<Tip>
+  Create a script to check all these values and compare against expected configuration. Run it after any deployment changes.
+</Tip>
+
+### Settlement Contract Balances
+
+Monitor token accumulation in the Settlement contract:
+
+```bash
+# Check native token balance
+cast balance <settlement-address> --rpc-url <rpc-url>
+
+# Check wrapped native token balance
+cast call <wrapped-native-token> \
+  "balanceOf(address)" \
+  <settlement-address> \
+  --rpc-url <rpc-url>
+
+# Check specific token balance
+cast call <token-address> \
+  "balanceOf(address)" \
+  <settlement-address> \
+  --rpc-url <rpc-url>
+```
+
+**Monitoring strategy:**
+
+<Steps>
+  <Step title="Track Balance Growth">
+    Monitor how quickly balances accumulate between keeper runs.
+  </Step>
+
+  <Step title="Alert on Stagnation">
+    Set alerts if balances stop growing, which may indicate:
+    - Trading volume decreased
+    - Fee collection mechanism broken
+    - Settlement contract issues
+  </Step>
+
+  <Step title="Alert on Large Balances">
+    Set alerts if balances grow very large without being swapped, which may indicate:
+    - Keeper not running
+    - Tokens below minOut threshold
+    - Order posting failures
+  </Step>
+</Steps>
+
+### Transaction History
+
+Track all module transactions using block explorers:
+
+**Ethereum Mainnet:**
+```
+https://etherscan.io/address/<module-address>
+```
+
+**Gnosis Chain:**
+```
+https://gnosisscan.io/address/<module-address>
+```
+
+**Arbitrum:**
+```
+https://arbiscan.io/address/<module-address>
+```
+
+**Base:**
+```
+https://basescan.org/address/<module-address>
+```
+
+**What to monitor:**
+- Transaction frequency (should match keeper schedule)
+- Transaction success rate (should be >99%)
+- Gas costs per transaction
+- Failed transaction reasons
+
+### Order Tracking
+
+Monitor CoW Protocol orders using the CoW Explorer:
+
+```
+https://explorer.cow.fi/
+```
+
+Filter by:
+- Receiver address (module's receiver)
+- Settlement contract as sender
+- AppData hash (module's appData)
+
+**Metrics to track:**
+- Order fill rate
+- Average fill time
+- Slippage vs. quoted amounts
+- Failed orders
+
+## Receiver Balance Monitoring
+
+The ultimate success metric is WETH accumulation at the receiver address:
+
+```bash
+cast call <wrapped-native-token> \
+  "balanceOf(address)" \
+  <receiver-address> \
+  --rpc-url <rpc-url>
+```
+
+**Create a monitoring dashboard:**
+
+<Steps>
+  <Step title="Track Daily Proceeds">
+    Record WETH balance at regular intervals (e.g., daily)
+  </Step>
+
+  <Step title="Calculate Growth Rate">
+    Compare current balance to previous periods
+  </Step>
+
+  <Step title="Set Baseline Alerts">
+    Alert if growth falls below expected baseline based on historical data
+  </Step>
+</Steps>
+
+## Automated Monitoring Solutions
+
+### Block Explorer Alerts
+
+Most block explorers offer email alerts for address activity:
+
+1. Navigate to the module address on the explorer
+2. Set up notifications for:
+   - All transactions
+   - Failed transactions only
+   - Large value transfers
+
+### Custom Monitoring Scripts
+
+Create a monitoring script that runs periodically:
+
+```typescript
+// Example monitoring script structure
+import { ethers } from "ethers";
+
+async function monitorModule() {
+  // 1. Check Settlement contract balances
+  const balances = await getTokenBalances();
+  
+  // 2. Check last drip transaction timestamp
+  const lastDrip = await getLastDripTime();
+  
+  // 3. Alert if no drip in expected timeframe
+  if (Date.now() - lastDrip > EXPECTED_INTERVAL) {
+    sendAlert("Keeper may be down");
+  }
+  
+  // 4. Check receiver WETH balance growth
+  const growth = await calculateGrowth();
+  if (growth < MINIMUM_EXPECTED) {
+    sendAlert("Low fee collection");
+  }
+}
+```
+
+### Tenderly Monitoring
+
+Use Tenderly for advanced transaction monitoring:
+
+1. Add the module address to your Tenderly dashboard
+2. Set up alerts for:
+   - Failed transactions
+   - Custom error conditions (OnlyKeeper, BuyAmountTooSmall)
+   - Gas usage anomalies
+3. Create simulations to test proposed changes
+
+**Alert example:**
+```
+IF transaction.to == MODULE_ADDRESS
+AND transaction.status == "failed"
+THEN send_alert("Module transaction failed")
+```
+
+## Health Check Checklist
+
+Run this checklist periodically to ensure system health:
+
+<Steps>
+  <Step title="Keeper Status">
+    - [ ] Keeper process is running
+    - [ ] Keeper wallet has sufficient ETH for gas
+    - [ ] Recent transactions show successful drips
+    - [ ] No error messages in logs
+  </Step>
+
+  <Step title="Module Configuration">
+    - [ ] Keeper address is correct
+    - [ ] Target safe is correct
+    - [ ] Receiver address is correct
+    - [ ] minOut threshold is appropriate
+    - [ ] Module is enabled on the Safe
+  </Step>
+
+  <Step title="Token Flow">
+    - [ ] Settlement contract accumulating tokens
+    - [ ] Tokens being discovered by keeper
+    - [ ] Orders successfully posting to OrderBook
+    - [ ] Orders filling on CoW Protocol
+    - [ ] WETH arriving at receiver address
+  </Step>
+
+  <Step title="Performance">
+    - [ ] Gas costs within acceptable range
+    - [ ] Order success rate >95%
+    - [ ] Average fill time reasonable
+    - [ ] No unusual slippage
+  </Step>
+</Steps>
+
+## Key Performance Indicators (KPIs)
+
+Track these metrics over time:
+
+| KPI | Target | Action if Below Target |
+|-----|--------|------------------------|
+| Keeper uptime | >99% | Investigate keeper infrastructure |
+| Transaction success rate | >99% | Review error logs, check module config |
+| Order posting success | >95% | Check OrderBook API, review token liquidity |
+| Order fill rate | >90% | Verify pricing, check market conditions |
+| Average time to fill | Less than 30 min | Increase buyAmount slippage tolerance |
+| Gas cost per drip | Variable | Optimize batch size, time execution |
+| Daily WETH proceeds | Baseline | Check trading volume, verify fee mechanism |
+
+## Diagnostic Commands Reference
+
+### Quick Status Check
+
+```bash
+# All-in-one status check
+echo "Module: <module-address>"
+echo "Keeper: $(cast call <module-address> 'keeper()' --rpc-url <rpc-url>)"
+echo "MinOut: $(cast call <module-address> 'minOut()' --rpc-url <rpc-url>)"
+echo "Settlement ETH: $(cast balance <settlement-address> --rpc-url <rpc-url>)"
+echo "Receiver WETH: $(cast call <weth-address> 'balanceOf(address)' <receiver-address> --rpc-url <rpc-url>)"
+```
+
+### Transaction Analysis
+
+```bash
+# Get transaction details
+cast tx <tx-hash> --rpc-url <rpc-url>
+
+# Get transaction receipt
+cast receipt <tx-hash> --rpc-url <rpc-url>
+
+# Decode transaction input
+cast 4byte-decode <input-data>
+
+# Get transaction logs
+cast logs --from-block <block> --to-block <block> --address <module-address> --rpc-url <rpc-url>
+```
+
+### Safe Module Status
+
+```bash
+# List all enabled modules on the Safe
+cast call <safe-address> "getModules()" --rpc-url <rpc-url>
+
+# Check if specific module is enabled (returns true/false)
+cast call <safe-address> "isModuleEnabled(address)" <module-address> --rpc-url <rpc-url>
+```
+
+<Warning>
+  If monitoring reveals the module is not enabled, orders cannot be executed and funds will accumulate in the Settlement contract. Re-enable the module immediately.
+</Warning>
+
+## Logging and Alerting Best Practices
+
+1. **Centralize logs**: Aggregate keeper logs in a central location (e.g., CloudWatch, Datadog)
+2. **Set up alerts**: Configure alerts for:
+   - Keeper process crashes
+   - Failed transactions
+   - Low keeper wallet balance
+   - Stagnant receiver balance
+   - Orders not filling
+3. **Create dashboards**: Visualize key metrics in real-time
+4. **Regular reviews**: Schedule weekly reviews of performance metrics
+5. **Incident response**: Document procedures for common failure scenarios
+
+<Tip>
+  The keeper logs expected proceeds for each run. Compare this to actual received amounts over time to detect systematic issues with slippage or order filling.
+</Tip>

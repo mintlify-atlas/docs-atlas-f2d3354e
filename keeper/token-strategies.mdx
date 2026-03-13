@@ -1,0 +1,711 @@
+---
+title: 'Token Discovery Strategies'
+description: 'Deep dive into token discovery methods and optimization for the CoW Fee Module keeper'
+---
+
+The keeper uses different strategies to discover which tokens are held by the Settlement contract. Choosing the right strategy impacts performance, reliability, and network coverage.
+
+## Overview
+
+From `ts/config.ts:104` and `ts/drip/getTokenBalances.ts:161-182`, the keeper supports two strategies:
+
+<CardGroup cols={2}>
+  <Card title="Explorer Strategy" icon="browser">
+    **Default method**
+    
+    Queries external block explorer APIs for token balances:
+    - Ethplorer API (Ethereum mainnet)
+    - Blockscout API (Gnosis Chain)
+    
+    Fast, but limited to specific networks.
+  </Card>
+
+  <Card title="Chain Strategy" icon="link">
+    **Universal method**
+    
+    Scans Settlement contract `Trade` events directly on-chain.
+    
+    Works on all networks, configurable lookback range.
+  </Card>
+</CardGroup>
+
+## Strategy Selection
+
+Set via CLI flag:
+
+```bash
+--token-list-strategy <strategy>
+```
+
+**Choices**: `explorer` (default), `chain`
+
+## Explorer Strategy
+
+### How It Works
+
+The explorer strategy (`ts/drip/getTokenBalances.ts:161-177`) queries external APIs:
+
+```typescript
+switch (strategy) {
+  case "explorer": {
+    switch (network) {
+      case "mainnet": {
+        return getTokenInfosFromEthPlorer(address);
+      }
+      case "gnosis": {
+        return getTokenInfosFromBlockscout(address);
+      }
+    }
+  }
+}
+```
+
+### Ethplorer API (Mainnet)
+
+Implementation in `ts/drip/getTokenBalances.ts:27-40`:
+
+```typescript
+const getTokenInfosFromEthPlorer = async (
+  address: string
+): Promise<ITokenInfo[]> => {
+  const { data } = await axios.get<IEthplorerResponse>(
+    `https://api.ethplorer.io/getAddressInfo/${address}?apiKey=freekey`
+  );
+
+  return data.tokens.map((token) => ({
+    address: token.tokenInfo.address,
+    decimals: +token.tokenInfo.decimals,
+    symbol: token.tokenInfo.symbol,
+    balance: token.rawBalance,
+  }));
+};
+```
+
+**Endpoint**: `https://api.ethplorer.io/getAddressInfo/{address}?apiKey=freekey`
+
+**Response format**:
+```json
+{
+  "tokens": [
+    {
+      "tokenInfo": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "decimals": "6",
+        "symbol": "USDC",
+        "price": { "rate": 0.9999 }
+      },
+      "rawBalance": "123456789"
+    }
+  ]
+}
+```
+
+### Blockscout API (Gnosis Chain)
+
+Implementation in `ts/drip/getTokenBalances.ts:53-68`:
+
+```typescript
+const getTokenInfosFromBlockscout = async (
+  address: string
+): Promise<ITokenInfo[]> => {
+  const { data } = await axios.get<IBlockscoutResponse[]>(
+    `https://gnosis.blockscout.com/api/v2/addresses/${address}/token-balances`
+  );
+
+  return data
+    .filter((token) => token.token.type === "ERC-20")
+    .map((token) => ({
+      address: token.token.address,
+      decimals: +token.token.decimals,
+      symbol: token.token.symbol,
+      balance: token.value,
+    }));
+};
+```
+
+**Endpoint**: `https://gnosis.blockscout.com/api/v2/addresses/{address}/token-balances`
+
+**Response format**:
+```json
+[
+  {
+    "token": {
+      "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+      "decimals": "18",
+      "symbol": "WXDAI",
+      "type": "ERC-20",
+      "exchange_rate": "1.0"
+    },
+    "value": "1234567890000000000"
+  }
+]
+```
+
+### Advantages
+
+<Check>
+- **Fast**: Single API call retrieves all tokens
+- **Complete**: Gets all ERC-20 tokens held by the address
+- **Metadata included**: Symbol, decimals, and balance in one response
+- **No RPC pressure**: Doesn't consume your RPC quota
+</Check>
+
+### Limitations
+
+<Warning>
+- **Network coverage**: Only mainnet and Gnosis Chain supported
+- **API dependency**: Relies on third-party API availability
+- **Rate limits**: Ethplorer free tier has limits
+- **Fails silently**: If API is down, strategy falls through
+</Warning>
+
+### When to Use
+
+<Tabs>
+  <Tab title="Use Explorer">
+    ✅ **Use explorer strategy when:**
+    
+    - Running on Ethereum mainnet
+    - Running on Gnosis Chain
+    - You want the fastest execution
+    - You don't have strict RPC quota limits
+    - You need complete token coverage
+  </Tab>
+  
+  <Tab title="Avoid Explorer">
+    ❌ **Avoid explorer strategy when:**
+    
+    - Running on other networks (Arbitrum, Base, etc.)
+    - Block explorer APIs are unreliable
+    - You need deterministic, verifiable results
+    - You're subject to API rate limits
+  </Tab>
+</Tabs>
+
+## Chain Strategy
+
+### How It Works
+
+The chain strategy (`ts/drip/getTokenBalances.ts:112-159`) scans `Trade` events from the Settlement contract:
+
+```typescript
+const getTokenInfosFromChain = async (
+  config: IConfig
+): Promise<ITokenInfo[]> => {
+  const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+  const settlement = new ethers.Contract(
+    config.gpv2Settlement,
+    settlementAbi,
+    provider
+  );
+  
+  // Get Trade event filter
+  const tradeFilter = settlement.filters.Trade();
+  const currentBlock = await provider.getBlockNumber();
+
+  // Chunk the range to avoid RPC limits
+  const chunks = chunkRange(
+    currentBlock - config.lookbackRange,
+    currentBlock,
+    LOG_FILTER_RANGE  // 1000 blocks per chunk
+  );
+  
+  // Fetch logs in parallel
+  const logRanges = await Promise.all(
+    chunks.map(async ([start, end]) => {
+      return await settlement.queryFilter(tradeFilter, start, end);
+    })
+  );
+  const logs = logRanges.flat();
+
+  // Extract unique tokens from Trade events
+  const allTokens = Array.from(
+    new Set(
+      logs.map((log) => [log.args!.sellToken, log.args!.buyToken]).flat()
+    ).values()
+  ).filter(
+    (x) => x.toLowerCase() !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE".toLowerCase()
+  );
+
+  // Fetch decimals via multicall
+  const allDecimals = await getDecimals(provider, allTokens);
+  
+  return allTokens.map((token, idx) => ({
+    address: token,
+    decimals: allDecimals[idx],
+    symbol: "",
+  }));
+};
+```
+
+### Chunking Strategy
+
+From `ts/drip/getTokenBalances.ts:99-110`, the keeper chunks block ranges to avoid exceeding RPC response size limits:
+
+```typescript
+const LOG_FILTER_RANGE = 1000;
+
+const chunkRange = (
+  start: number,
+  end: number,
+  chunkSize: number
+): [number, number][] => {
+  const chunks: [number, number][] = [];
+  for (let i = start; i <= end; i += chunkSize) {
+    const chunk = Math.min(i + chunkSize - 1, end);
+    chunks.push([i, chunk]);
+  }
+  return chunks;
+};
+```
+
+**Example**: With `--lookback-range 5000`:
+- Chunks: `[0-999, 1000-1999, 2000-2999, 3000-3999, 4000-4999]`
+- 5 parallel `queryFilter` calls
+
+### Multicall for Decimals
+
+From `ts/drip/getTokenBalances.ts:72-95`, the keeper uses Multicall3 to efficiently fetch token decimals:
+
+```typescript
+const getDecimals = async (
+  provider: ethers.providers.JsonRpcProvider,
+  tokens: string[]
+): Promise<number[]> => {
+  const Multicall3 = getMulticall3(provider);
+  const decimalsCalldata = new ethers.utils.Interface(
+    erc20Abi
+  ).encodeFunctionData("decimals");
+  
+  const cds = tokens.map((token) => ({
+    target: token,
+    callData: decimalsCalldata,
+  }));
+  
+  const decimalsRet = await Multicall3.tryAggregate(false, cds);
+  
+  const decimals = decimalsRet.map((r: any, idx: number) => {
+    if (!r.success) return 0;
+    try {
+      return ABI_CODER.decode(["uint8"], r.returnData)[0];
+    } catch (err) {
+      console.log("error decoding", r.returnData, tokens[idx]);
+      return 0;
+    }
+  }) as number[];
+  
+  return decimals;
+};
+```
+
+**Benefit**: Single RPC call fetches decimals for all tokens instead of N separate calls.
+
+### Trade Event Structure
+
+The Settlement contract emits `Trade` events:
+
+```solidity
+event Trade(
+    address indexed owner,
+    address sellToken,
+    address buyToken,
+    uint256 sellAmount,
+    uint256 buyAmount,
+    uint256 feeAmount,
+    bytes orderUid
+);
+```
+
+The keeper extracts `sellToken` and `buyToken` addresses from all events in the lookback range.
+
+### Advantages
+
+<Check>
+- **Universal**: Works on any EVM network
+- **Deterministic**: Verifiable results from on-chain data
+- **No API dependency**: Uses only your RPC provider
+- **Configurable**: Adjust `--lookback-range` for your needs
+- **Accurate**: Only includes tokens that were actually traded
+</Check>
+
+### Limitations
+
+<Warning>
+- **Slower**: Multiple RPC calls required
+- **RPC intensive**: Consumes more RPC quota
+- **Incomplete**: Only finds tokens traded in lookback range
+- **Block lag**: Recent tokens might be missed if lookback is too short
+- **Configuration required**: Must tune `--lookback-range`
+</Warning>
+
+### When to Use
+
+<Tabs>
+  <Tab title="Use Chain">
+    ✅ **Use chain strategy when:**
+    
+    - Running on networks without explorer API support
+    - You need deterministic, verifiable results
+    - Explorer APIs are unreliable or rate-limited
+    - You have generous RPC quotas
+    - You only want to process actively traded tokens
+  </Tab>
+  
+  <Tab title="Avoid Chain">
+    ❌ **Avoid chain strategy when:**
+    
+    - Running on mainnet or Gnosis (explorer is faster)
+    - You have strict RPC rate limits
+    - You need to process all tokens (including rarely traded ones)
+    - Your RPC provider charges per call
+  </Tab>
+</Tabs>
+
+## Configuration Options
+
+### Explorer Strategy
+
+```bash
+yarn ts-node index.ts \
+  --network mainnet \
+  --module 0xYourModuleAddress \
+  --token-list-strategy explorer
+```
+
+No additional configuration needed.
+
+### Chain Strategy
+
+```bash
+yarn ts-node index.ts \
+  --network arbitrum \
+  --module 0xYourModuleAddress \
+  --token-list-strategy chain \
+  --lookback-range 5000
+```
+
+**Key parameter**: `--lookback-range <n>`
+
+- **Default**: 1000 blocks
+- **Recommendation**: 
+  - Ethereum mainnet: 1000-5000 blocks (~3-18 hours)
+  - Gnosis Chain: 5000-20000 blocks (~7-28 hours)
+  - Arbitrum: 10000-50000 blocks (~1-5 hours)
+  - Base: 5000-20000 blocks (~1-5 hours)
+
+<Note>
+Block times vary by network. Adjust `--lookback-range` based on your desired time window:
+
+- **Mainnet**: ~12s per block
+- **Gnosis**: ~5s per block  
+- **Arbitrum**: ~0.25s per block
+- **Base**: ~2s per block
+</Note>
+
+## Performance Comparison
+
+<Tabs>
+  <Tab title="Explorer Strategy">
+    **Typical execution time**: 2-5 seconds
+    
+    **RPC calls**:
+    - 0-1 calls (only for balance/allowance verification)
+    
+    **Network usage**:
+    - 1 HTTP request to block explorer API
+    - Low bandwidth
+    
+    **Example output**:
+    ```
+    Total tokens pre-filter: 87
+    Total tokens after filtering by quotes api: 42
+    Total tokens after filtering by minOut: 38
+    ```
+    
+    **Processing time**: Less than 5 seconds
+  </Tab>
+  
+  <Tab title="Chain Strategy">
+    **Typical execution time**: 10-30 seconds
+    
+    **RPC calls**:
+    - N calls for log queries (N = lookbackRange / 1000)
+    - 1 multicall for decimals
+    - Example: 5000 block range = ~5 log query calls
+    
+    **Network usage**:
+    - Multiple RPC requests
+    - Moderate to high bandwidth (depending on log volume)
+    
+    **Example output**:
+    ```
+    Total tokens pre-filter: 42
+    Total tokens after filtering by quotes api: 38
+    Total tokens after filtering by minOut: 35
+    ```
+    
+    **Processing time**: 10-30s (depending on lookback range)
+  </Tab>
+</Tabs>
+
+## Filtering Pipeline
+
+After token discovery, both strategies go through the same filtering pipeline from `ts/drip/getTokensToSwap.ts:23-94`:
+
+<Steps>
+  <Step title="Initial Discovery">
+    - **Explorer**: All ERC-20 tokens held by Settlement
+    - **Chain**: All tokens from Trade events in lookback range
+  </Step>
+
+  <Step title="Balance & Allowance Check">
+    Fetch real-time balances and allowances via multicall:
+    
+    ```typescript
+    const [balances, allowances] = await Promise.all([
+      getBalances(provider, config.gpv2Settlement, tokenAddresses),
+      getAllowances(
+        provider,
+        config.gpv2Settlement,
+        config.vaultRelayer,
+        tokenAddresses
+      ),
+    ]);
+    ```
+    
+    Filter out tokens with zero balance.
+  </Step>
+
+  <Step title="Liquidity Validation">
+    Query CoW Protocol OrderBook API for quotes:
+    
+    ```typescript
+    const quotes = await Promise.allSettled(
+      tokens.map((token) =>
+        orderBookApi.getQuote({
+          sellToken: token.address,
+          sellAmountBeforeFee: token.balance.toString(),
+          kind: OrderQuoteSideKindSell.SELL,
+          buyToken: config.wrappedNativeToken,
+          from: config.gpv2Settlement,
+        })
+      )
+    );
+    ```
+    
+    Filter out tokens with no quote (no liquidity).
+  </Step>
+
+  <Step title="Slippage Application">
+    Apply configured slippage tolerance:
+    
+    ```typescript
+    buyAmount: quotedAmount
+      .mul(10000 - config.buyAmountSlippageBps)
+      .div(10000)
+    ```
+    
+    Default: 100 bps (1% slippage).
+  </Step>
+
+  <Step title="MinOut Filter">
+    Filter by minimum output threshold:
+    
+    ```typescript
+    const minOutFiltered = quotesFiltered.filter((token) =>
+      BigNumber.from(token.buyAmount).gt(config.minOut)
+    );
+    ```
+    
+    Excludes dust and low-value tokens.
+  </Step>
+</Steps>
+
+**Console output** shows progression:
+
+```
+Total tokens pre-filter: 87
+Total tokens after filtering by quotes api: 42
+Total tokens after filtering by minOut: 38
+```
+
+## Network Recommendations
+
+<CardGroup cols={2}>
+  <Card title="Mainnet" icon="ethereum">
+    **Recommended**: Explorer strategy
+    
+    ```bash
+    --token-list-strategy explorer
+    ```
+    
+    Ethplorer API provides fast, complete token list.
+  </Card>
+  
+  <Card title="Gnosis Chain" icon="circle">
+    **Recommended**: Explorer strategy
+    
+    ```bash
+    --token-list-strategy explorer
+    ```
+    
+    Blockscout API is reliable and fast.
+  </Card>
+  
+  <Card title="Arbitrum" icon="layer-group">
+    **Required**: Chain strategy
+    
+    ```bash
+    --token-list-strategy chain \
+    --lookback-range 10000
+    ```
+    
+    No explorer API available. Use higher lookback range due to fast blocks.
+  </Card>
+  
+  <Card title="Base" icon="b">
+    **Required**: Chain strategy
+    
+    ```bash
+    --token-list-strategy chain \
+    --lookback-range 5000
+    ```
+    
+    No explorer API available.
+  </Card>
+  
+  <Card title="Other Networks" icon="network-wired">
+    **Required**: Chain strategy
+    
+    ```bash
+    --token-list-strategy chain \
+    --lookback-range 5000
+    ```
+    
+    Adjust lookback based on network block time.
+  </Card>
+</CardGroup>
+
+## Optimization Tips
+
+### For Explorer Strategy
+
+<Steps>
+  <Step title="Monitor API Rate Limits">
+    Ethplorer free tier limits:
+    - 100 requests per day
+    - 1 request per second
+    
+    Consider caching or using paid tier for high-frequency operation.
+  </Step>
+
+  <Step title="Fallback to Chain">
+    If explorer API fails, manually switch to chain strategy:
+    
+    ```bash
+    --token-list-strategy chain --lookback-range 5000
+    ```
+  </Step>
+</Steps>
+
+### For Chain Strategy
+
+<Steps>
+  <Step title="Tune Lookback Range">
+    Start with default 1000 blocks, increase if missing tokens:
+    
+    ```bash
+    # Test different ranges
+    --lookback-range 1000   # Fast, recent tokens only
+    --lookback-range 5000   # Balanced
+    --lookback-range 10000  # Comprehensive, slower
+    ```
+  </Step>
+
+  <Step title="Use Fast RPC Providers">
+    Chain strategy benefits from low-latency RPC:
+    
+    ```bash
+    --rpc-url https://eth.llamarpc.com        # Good
+    --rpc-url https://your-private-node.com   # Best
+    ```
+  </Step>
+
+  <Step title="Archive Node for Historical Data">
+    For very long lookback ranges (>10000 blocks), use archive node:
+    
+    ```bash
+    --rpc-url https://your-archive-node.com \
+    --lookback-range 50000
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Explorer strategy returns 0 tokens">
+    **Possible causes**:
+    - API rate limit exceeded
+    - API temporarily down
+    - Network not supported (only mainnet/Gnosis)
+    
+    **Solution**: Switch to chain strategy:
+    ```bash
+    --token-list-strategy chain --lookback-range 5000
+    ```
+  </Accordion>
+
+  <Accordion title="Chain strategy too slow">
+    **Solution**: Reduce lookback range:
+    ```bash
+    --lookback-range 1000  # Faster, may miss older tokens
+    ```
+    
+    Or use explorer strategy if on mainnet/Gnosis.
+  </Accordion>
+
+  <Accordion title="Chain strategy missing tokens">
+    **Solution**: Increase lookback range:
+    ```bash
+    --lookback-range 10000  # Looks further back
+    ```
+    
+    Or run keeper more frequently to catch new tokens.
+  </Accordion>
+
+  <Accordion title="RPC errors: response size too large">
+    **Cause**: Too many logs in single chunk (1000 blocks).
+    
+    **Solution**: This is handled automatically by chunking. If still failing, the RPC provider has very strict limits. Try a different provider or reduce lookback range.
+  </Accordion>
+
+  <Accordion title="Error decoding decimals">
+    ```
+    error decoding 0x... 0xTokenAddress
+    ```
+    
+    **Cause**: Non-standard token contract (no `decimals()` function).
+    
+    **Behavior**: Token is assigned 0 decimals and may be filtered out.
+    
+    **Solution**: These tokens are automatically excluded. This is expected for non-standard tokens.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/keeper/configuration">
+    Fine-tune all keeper parameters
+  </Card>
+  
+  <Card title="Running Keeper" icon="play" href="/keeper/running-keeper">
+    Start running the keeper with your chosen strategy
+  </Card>
+  
+  <Card title="Docker" icon="docker" href="/keeper/docker">
+    Deploy with Docker using optimized strategies
+  </Card>
+</CardGroup>

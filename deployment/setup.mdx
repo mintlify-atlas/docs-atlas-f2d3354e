@@ -1,0 +1,230 @@
+---
+title: 'Environment Setup'
+description: 'Configure your development environment for deploying the CoW Fee Module'
+---
+
+## Overview
+
+Before deploying the CoW Fee Module, you need to configure your environment with the necessary variables and dependencies. This guide walks you through setting up your deployment environment.
+
+<Steps>
+  <Step title="Clone and Install Dependencies">
+    Ensure you have Foundry installed and the project dependencies set up:
+
+    ```bash
+    # Install Foundry if not already installed
+    curl -L https://foundry.paradigm.xyz | bash
+    foundryup
+
+    # Install project dependencies
+    forge install
+    ```
+  </Step>
+
+  <Step title="Copy Environment File">
+    Copy the example environment file to create your own configuration:
+
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Open `.env` and configure all required variables:
+
+    ### RPC Configuration
+
+    Set your RPC URL for the target network:
+
+    ```bash
+    RPC_URL=wss://mainnet.gateway.tenderly.co
+    ```
+
+    <Note>
+      You can find RPC endpoints at [chainlist.org](https://chainlist.org) or [llamarpc.com](https://llamarpc.com/eth)
+    </Note>
+
+    **Network-specific RPC examples:**
+    - **Ethereum Mainnet**: `https://eth.llamarpc.com`
+    - **Gnosis**: `https://1rpc.io/gnosis`
+    - **Arbitrum**: `https://arb1.arbitrum.io/rpc`
+    - **Base**: `https://base.llamarpc.com`
+    - **Sepolia**: `https://sepolia.drpc.org`
+
+    ### Deployment Parameters
+
+    #### RECEIVER
+    ```bash
+    RECEIVER=0x...
+    ```
+    The Ethereum address that will receive the converted fees (recipient of CoW orders).
+
+    #### WRAPPED_NATIVE_TOKEN
+    ```bash
+    WRAPPED_NATIVE_TOKEN=0x...
+    ```
+    The ERC20 address of the buyToken in which you want to convert the fees.
+
+    **Network-specific wrapped native tokens:**
+    - **Sepolia**: `0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14` (WETH)
+    - **Ethereum Mainnet**: `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` (WETH)
+    - **Base**: `0x4200000000000000000000000000000000000006` (WETH)
+    - **Arbitrum**: `0x82aF49447D8a07e3bd95BD0d56f35241523fBab1` (WETH)
+
+    #### KEEPER
+    ```bash
+    KEEPER=0x...
+    ```
+    The module maintainer address. This is the only account with permission to execute `drip`, `approve`, and `revoke` operations on the Safe module.
+
+    <Warning>
+      Keep the keeper's private key secure. This account will have special permissions to manage the module.
+    </Warning>
+
+    #### SETTLEMENT
+    ```bash
+    SETTLEMENT=0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+    ```
+    CoW Protocol settlement contract address. The default value works for most networks.
+
+    <Note>
+      See [CoW Protocol contracts repository](https://github.com/cowprotocol/contracts/blob/main/networks.json) for network-specific addresses.
+    </Note>
+
+    #### APP_DATA
+    ```bash
+    APP_DATA=0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b
+    ```
+    A bytes32 hex value containing the app-data for the CoW order struct. This contains the hashed content of the order's metadata.
+
+    <Note>
+      Create your own app-data value at [explorer.cow.fi/appdata](https://explorer.cow.fi/appdata)
+    </Note>
+
+    #### TARGET_SAFE
+    ```bash
+    TARGET_SAFE=0x...
+    ```
+    The Safe address where the module will be enabled.
+
+    <Warning>
+      **IMPORTANT**: This Safe must also be a whitelisted CoW Protocol solver.
+    </Warning>
+
+    #### MIN_OUT
+    ```bash
+    MIN_OUT=1000000000000000000
+    ```
+    Minimum amount of `WRAPPED_NATIVE_TOKEN` (in atoms/wei) to accept as the buyAmount for orders. Fees that would result in less than this amount won't be extracted.
+
+    ### Contract Verification
+
+    #### ETHERSCAN_API_KEY
+    ```bash
+    ETHERSCAN_API_KEY=your_api_key_here
+    ```
+    Your Etherscan (or network block explorer) API key for contract verification.
+
+    <Note>
+      Obtain API keys from:
+      - **Ethereum/Sepolia**: [etherscan.io](https://etherscan.io/apis)
+      - **Gnosis**: [gnosisscan.io](https://gnosisscan.io/apis)
+      - **Arbitrum**: [arbiscan.io](https://arbiscan.io/apis)
+      - **Base**: [basescan.org](https://basescan.org/apis)
+      - **Polygon**: [polygonscan.com](https://polygonscan.com/apis)
+    </Note>
+
+    ### Optional Variables
+
+    #### SHOULD_ENABLE_MODULE
+    ```bash
+    SHOULD_ENABLE_MODULE=false
+    ```
+    Set to `true` only for local Anvil setup. This automatically enables the module during deployment.
+
+    <Warning>
+      Leave this as `false` for production deployments. Module enablement should be done through Safe multisig.
+    </Warning>
+  </Step>
+
+  <Step title="Verify Configuration">
+    Ensure all required variables are set:
+
+    ```bash
+    source .env
+
+    # Verify critical variables are set
+    echo "RECEIVER: $RECEIVER"
+    echo "KEEPER: $KEEPER"
+    echo "TARGET_SAFE: $TARGET_SAFE"
+    echo "WRAPPED_NATIVE_TOKEN: $WRAPPED_NATIVE_TOKEN"
+    echo "MIN_OUT: $MIN_OUT"
+    ```
+  </Step>
+</Steps>
+
+## Complete Configuration Example
+
+<CodeGroup>
+```bash Ethereum Mainnet
+RPC_URL=https://eth.llamarpc.com
+RECEIVER=0x1234567890123456789012345678901234567890
+WRAPPED_NATIVE_TOKEN=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+KEEPER=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+SETTLEMENT=0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+APP_DATA=0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b
+TARGET_SAFE=0xfedcbafedcbafedcbafedcbafedcbafedcbafed
+MIN_OUT=1000000000000000000
+ETHERSCAN_API_KEY=your_etherscan_api_key
+```
+
+```bash Gnosis Chain
+RPC_URL=https://1rpc.io/gnosis
+RECEIVER=0x1234567890123456789012345678901234567890
+WRAPPED_NATIVE_TOKEN=0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d
+KEEPER=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+SETTLEMENT=0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+APP_DATA=0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b
+TARGET_SAFE=0xfedcbafedcbafedcbafedcbafedcbafedcbafed
+MIN_OUT=1000000000000000000
+ETHERSCAN_API_KEY=your_gnosisscan_api_key
+```
+
+```bash Base
+RPC_URL=https://base.llamarpc.com
+RECEIVER=0x1234567890123456789012345678901234567890
+WRAPPED_NATIVE_TOKEN=0x4200000000000000000000000000000000000006
+KEEPER=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+SETTLEMENT=0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+APP_DATA=0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b
+TARGET_SAFE=0xfedcbafedcbafedcbafedcbafedcbafedcbafed
+MIN_OUT=1000000000000000000
+ETHERSCAN_API_KEY=your_basescan_api_key
+```
+
+```bash Sepolia Testnet
+RPC_URL=https://sepolia.drpc.org
+RECEIVER=0x1234567890123456789012345678901234567890
+WRAPPED_NATIVE_TOKEN=0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14
+KEEPER=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+SETTLEMENT=0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+APP_DATA=0xbcca8463f460f14bca0185afeeb75923ee4434612f41063d0171b1e743ffe84b
+TARGET_SAFE=0xfedcbafedcbafedcbafedcbafedcbafedcbafed
+MIN_OUT=1000000000000000000
+ETHERSCAN_API_KEY=your_etherscan_api_key
+```
+</CodeGroup>
+
+## Next Steps
+
+Once your environment is configured, proceed to [Deploy Module](/deployment/deploy-module) to deploy the CoW Fee Module contract.
+
+## Security Considerations
+
+<Warning>
+  - **Never commit your `.env` file** to version control
+  - Keep your `KEEPER` private key secure and separate from the `.env` file
+  - Verify the `TARGET_SAFE` is a whitelisted solver before deployment
+  - Test deployments on Sepolia testnet before mainnet
+  - Double-check all addresses are for the correct network
+</Warning>

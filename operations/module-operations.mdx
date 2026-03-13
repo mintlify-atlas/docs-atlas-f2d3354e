@@ -1,0 +1,279 @@
+---
+title: 'Module Operations'
+description: 'Learn how to manage and operate the CoW Fee Module'
+---
+
+The CoW Fee Module provides several key operations for managing token swaps and approvals. This guide covers all operational procedures for module management.
+
+## Core Module Functions
+
+The module exposes three primary functions that can be called by the designated keeper:
+
+### Drip Function
+
+The `drip` function is the main operation that:
+1. Approves tokens for spending by the vault relayer (if needed)
+2. Creates presignatures for sell orders
+3. Wraps native tokens when balance exceeds `minOut`
+4. Transfers wrapped native tokens to the receiver
+
+**Function signature:**
+```solidity
+function drip(address[] calldata _approveTokens, SwapToken[] calldata _swapTokens) external onlyKeeper
+```
+
+See src/COWFeeModule.sol:92 for implementation details.
+
+### Approve Function
+
+The `approve` function grants maximum approval for specified tokens to the vault relayer.
+
+**Function signature:**
+```solidity
+function approve(address[] calldata _tokens) external onlyKeeper
+```
+
+See src/COWFeeModule.sol:64 for implementation details.
+
+### Revoke Function
+
+The `revoke` function removes approvals for specified tokens and spenders.
+
+**Function signature:**
+```solidity
+function revoke(Revocation[] calldata _revocations) external onlyKeeper
+```
+
+See src/COWFeeModule.sol:72 for implementation details.
+
+## Enabling the Module
+
+<Steps>
+  <Step title="Deploy the Module">
+    First, ensure the module contract is deployed. See the deployment guide for details.
+  </Step>
+
+  <Step title="Enable via Safe UI">
+    Use the [Transaction Builder UI](https://app.safe.global/share/safe-app?appUrl=https%3A%2F%2Fapps-portal.safe.global%2Ftx-builder) on the target Safe:
+
+    1. Select the target Safe
+    2. Click on "Use Implementation ABI" to load the ABI automatically
+    3. Select `enableModule` from the dropdown of available functions
+    4. Enter the module address and click on "Add new transaction"
+    5. Send batch
+  </Step>
+
+  <Step title="Enable via Cast Command">
+    Alternatively, generate the calldata using cast:
+
+    ```bash
+    cast calldata "enableModule(address)" <module-address>
+    ```
+
+    Use this calldata to send a transaction from the Safe to itself to enable the module.
+  </Step>
+</Steps>
+
+<Tip>
+  After enabling the module, verify it appears in the Safe's module list via the Settings page.
+</Tip>
+
+## Disabling the Module
+
+<Warning>
+  Disabling the module will prevent the keeper from executing any operations. Ensure this is intentional before proceeding.
+</Warning>
+
+To disable the module:
+
+1. Navigate to the Safe UI settings page
+2. Locate the module in the enabled modules list
+3. Click the disable option for the specific module
+4. Confirm the transaction
+
+## Manual Module Operations with Cast
+
+For advanced users, you can interact with the module directly using `cast` commands.
+
+<Accordion title="Approve Tokens">
+  Grant maximum approval for tokens to be spent by the vault relayer:
+
+  ```bash
+  cast send <module-address> \
+    "approve(address[])" \
+    "[<token1>,<token2>]" \
+    --private-key <keeper-private-key> \
+    --rpc-url <rpc-url>
+  ```
+
+  **Example:**
+  ```bash
+  cast send 0x123...abc \
+    "approve(address[])" \
+    "[0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,0xdAC17F958D2ee523a2206206994597C13D831ec7]" \
+    --private-key $KEEPER_PRIVATE_KEY \
+    --rpc-url $RPC_URL
+  ```
+</Accordion>
+
+<Accordion title="Revoke Approvals">
+  Remove approvals for specific tokens and spenders:
+
+  ```bash
+  cast send <module-address> \
+    "revoke((address,address)[])" \
+    "[(<token>,<spender>)]" \
+    --private-key <keeper-private-key> \
+    --rpc-url <rpc-url>
+  ```
+
+  **Example:**
+  ```bash
+  cast send 0x123...abc \
+    "revoke((address,address)[])" \
+    "[(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,0x9008D19f58AAbD9eD0D60971565AA8510560ab41)]" \
+    --private-key $KEEPER_PRIVATE_KEY \
+    --rpc-url $RPC_URL
+  ```
+</Accordion>
+
+<Accordion title="Manual Drip Execution">
+  <Warning>
+    Manual drip execution is complex and should only be performed when the automated keeper is unavailable. Incorrect parameters can result in failed transactions.
+  </Warning>
+
+  Execute a manual drip with token approvals and swaps:
+
+  ```bash
+  cast send <module-address> \
+    "drip(address[],(address,uint256,uint256)[])" \
+    "[<tokens-to-approve>]" \
+    "[(<token>,<sellAmount>,<buyAmount>)]" \
+    --private-key <keeper-private-key> \
+    --rpc-url <rpc-url>
+  ```
+
+  The `drip` function will fail if `buyAmount < minOut` for any token.
+</Accordion>
+
+## Running the Keeper
+
+The keeper automates the drip process by monitoring token balances and executing swaps.
+
+### Configuration
+
+<Steps>
+  <Step title="Set Environment Variables">
+    Copy `.env.example` to `.env` and configure:
+
+    ```bash
+    PRIVATE_KEY=<keeper-private-key>
+    RPC_URL=<rpc-endpoint>
+    ```
+  </Step>
+
+  <Step title="Choose Execution Method">
+    Select between running directly with Node.js or using Docker.
+  </Step>
+</Steps>
+
+### Direct Execution
+
+```bash
+source .env
+
+yarn ts-node index.ts \
+  --network mainnet \
+  --max-orders 250 \
+  --rpc-url $RPC_URL \
+  --buy-amount-slippage-bps 100 \
+  --module <module-address> \
+  --token-list-strategy chain \
+  --lookback-range 1000
+```
+
+### Docker Execution
+
+```bash
+source .env
+
+# Build the Docker image
+docker build -t cow-fee .
+
+# Run the container
+docker run --rm \
+  -e PRIVATE_KEY=$PRIVATE_KEY \
+  cow-fee \
+  --network mainnet \
+  --max-orders 250 \
+  --rpc-url $RPC_URL \
+  --buy-amount-slippage-bps 100 \
+  --module <module-address> \
+  --token-list-strategy chain \
+  --lookback-range 1000
+```
+
+### Keeper Options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `--network` | Target network (mainnet, gnosis, arbitrum, base, sepolia) | Required |
+| `--rpc-url` | RPC endpoint URL | Required |
+| `--module` | COWFeeModule contract address | Required |
+| `--max-orders` | Maximum number of orders per drip call | 250 |
+| `--buy-amount-slippage-bps` | Slippage tolerance in basis points | 100 |
+| `--token-list-strategy` | Token discovery method (explorer, chain) | explorer |
+| `--lookback-range` | Number of blocks to scan for Trade events | 1000 |
+
+<Tip>
+  Use `--token-list-strategy chain` for more reliable token discovery on networks where explorer APIs are unstable.
+</Tip>
+
+## Keeper Operation Flow
+
+The keeper executes the following workflow:
+
+<Steps>
+  <Step title="Discover Tokens">
+    Identifies tokens held by the Settlement contract using either:
+    - Explorer APIs (Ethplorer/Blockscout)
+    - On-chain Settlement Trade events
+  </Step>
+
+  <Step title="Filter Tokens">
+    Filters tokens based on:
+    - Balance value exceeding `minOut` threshold
+    - Successful quote from CoW OrderBook API
+    - Liquidity availability
+  </Step>
+
+  <Step title="Post Orders">
+    Submits sell orders to the CoW OrderBook API for all eligible tokens.
+  </Step>
+
+  <Step title="Execute Drip">
+    Calls `drip` function with:
+    - Tokens requiring approval
+    - Swap parameters (token, sellAmount, buyAmount) for successfully posted orders
+  </Step>
+
+  <Step title="Wrap Native Tokens">
+    If native token balance ≥ `minOut`, wraps it and transfers to receiver.
+  </Step>
+</Steps>
+
+See ts/drip/dripItAll.ts:14 for the complete implementation.
+
+## Order Validity Period
+
+Orders created by the module have a deterministic validity period:
+
+- Orders are valid until the next 2-hour boundary
+- Example: If created at 14:30, valid until 16:00
+- This ensures the keeper can post orders before executing the on-chain drip
+
+See src/COWFeeModule.sol:170 for the `nextValidTo` implementation.
+
+<Warning>
+  Orders must be posted to the OrderBook API before calling `drip`, otherwise the presignatures will be created for non-existent orders.
+</Warning>
